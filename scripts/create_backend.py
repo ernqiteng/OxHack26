@@ -55,17 +55,18 @@ def deploy(ip: str, key: Path, t0: float, *, enable_poller: bool) -> None:
     print("         " + out.strip().splitlines()[-1])
     # The tempo user exists only after bootstrap, so lock the .env down now.
     ssh(ip, key, "chown tempo:tempo /opt/tempo/.env && chmod 600 /opt/tempo/.env")
-    models = sorted((REPO_ROOT / "models").glob("lgbm_*.joblib")) + [REPO_ROOT / "models" / "training.json"]
-    models = [m for m in models if m.exists()]
-    if len(models) >= 3:
+    model_dir = REPO_ROOT / "models"
+    models = sorted(model_dir.glob("lgbm_*.joblib"))
+    extras = [m for m in sorted(model_dir.glob("*.json")) + sorted(model_dir.glob("*.parquet")) if m.exists()]
+    if models or extras:
         ssh(ip, key, "mkdir -p /opt/tempo/models && chown tempo:tempo /opt/tempo/models")
         subprocess.run(
-            ["scp", "-i", str(key), *SSH_OPTS, *map(str, models), f"root@{ip}:/opt/tempo/models/"],
+            ["scp", "-i", str(key), *SSH_OPTS, *map(str, models + extras), f"root@{ip}:/opt/tempo/models/"],
             check=True,
             capture_output=True,
         )
         ssh(ip, key, "chown -R tempo:tempo /opt/tempo/models")
-        step(t0, f"copied {len(models)} model files to /opt/tempo/models")
+        step(t0, f"copied {len(models) + len(extras)} files to /opt/tempo/models (model, replay week)")
     units = (
         "tempo-dashboard"
         + (" tempo-poller" if enable_poller else "")
