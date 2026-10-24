@@ -64,7 +64,7 @@ This is the pipeline from raw market data to a committed battery action.
 - **Cadence:** 48 settlement periods a day, so new data arrives during the demo and the live view genuinely updates.
 - **History:** a bulk load of around two years of history for training and backtesting.
 
-Everything lands in **Tiger Data hypertables**. Every row is stamped with the time the data became *available*, not just the settlement period it *describes*. Elexon provides a publish time for the wind forecast, demand forecast, generation mix and system price, and we store it as-is. The Market Index Data price series carries no publish time, so for those rows we store a stated availability delay (period end plus a fixed number of minutes, shown on the honesty panel). This matters more than anything else in the data layer: it guarantees no lookahead. When Tempo makes a decision for 6pm, every feature it uses is built only from data that had actually been available at the moment the decision was made. A wind forecast released at 7pm cannot leak into a 6pm decision.
+Everything lands in **Tiger Data hypertables**. Every row is stamped with the time the data became *available*, not just the settlement period it *describes*. Elexon provides a publish time for the wind forecast, demand forecast, generation mix and system price, and we store it as-is. The Market Index Data price series carries no publish time, so for those rows we store a stated availability delay (period end plus a fixed number of minutes, shown on the honesty panel). The delay is deliberately cautious: Elexon sometimes publishes a period's price sooner, and Tempo still waits for the stated time. This matters more than anything else in the data layer: it guarantees no lookahead. When Tempo makes a decision for 6pm, every feature it uses is built only from data that had actually been available at the moment the decision was made. A wind forecast released at 7pm cannot leak into a 6pm decision.
 
 **Price series.** Tempo uses APX Market Index Data (the within-day exchange index) as its price. System price is published about 24 hours after the period it describes, so it cannot drive live decisions. The N2EX index has frequent zero-price, zero-volume rows. We assume the battery can transact at the APX index price for each period, and that assumption is stated on screen.
 
@@ -74,15 +74,15 @@ Features are built from **hierarchical continuous aggregates** at three timescal
 
 | Timescale | Examples |
 |---|---|
-| Half-hourly | Price at the same settlement period yesterday and last week, forecast wind as a share of demand (the wind forecast is hourly and is interpolated to settlement periods), time-of-day effects |
-| Daily | Rolling daily price spread (max minus min), daily mean, day-of-week effects |
-| Weekly | Weekly volatility, regime indicators (calm vs windy) |
+| Half-hourly | Price at the same settlement period yesterday and last week, forecast wind as a share of demand (the wind forecast is hourly and is forward-filled to settlement periods, never interpolated: interpolating 10:30 would need the 11:00 forecast, which may not be published yet at decision time), time-of-day effects |
+| Daily | Yesterday's daily price spread (max minus min), day-of-week and weekend effects |
+| Weekly | Last complete week's mean price and volatility |
 
 The same aggregates that feed the model also drive the dashboard charts, and they stay current automatically as new settlement periods arrive.
 
 #### Forecast
 
-The forecaster predicts the price for each of the next 48 settlement periods. It does not output a single number per period. It outputs three quantiles, **p10, p50 and p90**, so the system knows how confident it is. The decision layer uses that uncertainty: a wide band means a smaller expected edge, which can tip a marginal cycle into a hold.
+The forecaster predicts the price for each of the next 48 settlement periods. It does not output a single number per period. It outputs three quantiles, **p10, p50 and p90**, so the system knows how confident it is. The band is shown on the live view and tested for calibration. The decision itself uses p50: neither the live greedy rule nor the LP in the backtest lets the band change a decision. The LP has a conservative mode that buys at p90 and sells at p10, so that a wide band shrinks the expected edge and can tip a marginal cycle into a hold, but it is not switched on.
 
 We use a model ladder and climb it only as far as the data justifies, simplest first:
 
@@ -151,8 +151,8 @@ Raw pounds vary wildly between a calm week and a volatile one. A system can make
 
 #### Also on screen
 
-- **Calibration.** Does the p10–p90 band actually contain about 90% of real prices? If the band contains 60%, the model is overconfident and the cost gate is being lied to.
-- **Regime breakdown.** Performance split into calm weeks vs windy, volatile weeks. Prediction tends to matter far more in the second.
+- **Calibration.** Does the p10–p90 band actually contain about 80% of real prices, as a p10–p90 band should? If it contains 60%, the model is overconfident and its stated uncertainty cannot be trusted.
+- **Regime breakdown.** Performance split into calm weeks vs windy weeks. We expected prediction to matter more in windy weeks; over our 100 unseen weeks it did not: Tempo's lead over persistence is 16 points on calm weeks and 12 on windy ones, and the panel shows that.
 - **Where it's weak.** If the simple rule nearly matches Tempo in summer, when spreads are small, we show that too. The point of the panel is that a judge can see the limits without having to ask.
 
 ---
@@ -199,7 +199,7 @@ honesty dashboard             timing audit
 - **Hypertables** for the grid data stream and the decisions log. Time-series storage that is built for exactly this shape of data: a high-frequency append-only stream queried by time range.
 - **Free service as the primary database.** Free services use copy-on-write storage, which is what makes forks zero-copy and fast enough to create on a click.
 - **Hierarchical continuous aggregates** for multi-timescale features and live dashboard charts. The half-hourly, daily and weekly rollups update themselves as new data arrives.
-- **Compression** on two years of history, shown on screen ("X million rows, compressed Y%"), with a two-year query returning instantly.
+- **Compression** on two years of history, shown on screen ("X million rows, compressed Y%"), with a two-year query that executes in about 20 ms on Tiger (fetching all 35,000 half-hours to a laptop takes seconds, so the two-year chart draws from the daily aggregate).
 - **Zero-copy forks** as the timing-audit engine. The what-if timelines need a writable copy of the live database, frozen at the moment of the click, that they can scribble on without touching live. Nothing in Layer 2 works without it.
 
 Take Tiger Data away and both the feature pipeline and the signature mechanic go with it.
@@ -247,7 +247,7 @@ Cut from the bottom if time runs out.
 ### Nice-to-have (cut first)
 
 7. `cvxpy` LP optimiser. Built, tested, and in the backtest as the Tempo LP row (68% vs greedy's 66%). Greedy stays live, see section 3.
-8. Battery-size sweep and regime breakdown.
+8. Battery-size sweep (not built, see [time.md](time.md)). The regime breakdown, once in this group, is built and on the honesty panel.
 9. pgvector "similar days" lookup, finding historical days whose shape matches today's forecast.
 
 ---
