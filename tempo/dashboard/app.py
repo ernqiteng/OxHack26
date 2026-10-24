@@ -185,7 +185,12 @@ def section_replay(src) -> None:
     upto = int(st.session_state.get("replay_upto", min(96, n)))
     shown = week.iloc[:upto]
     pnl = float(shown.cum_pnl_gbp.iloc[-1])
-    first, last = T.local_naive(week.ts.iloc[0]), T.local_naive(week.ts.iloc[-1])
+    # The week is cut on UTC days in the parquet; the last period (23:30 UTC) is already the next day in
+    # UK time, so name the span by UTC dates, not local ones.
+    first, last = (
+        pd.Timestamp(week.ts.iloc[0]).tz_convert("UTC"),
+        pd.Timestamp(week.ts.iloc[-1]).tz_convert("UTC"),
+    )
     span = (
         f"{first:%-d} to {last:%-d %B %Y}"
         if first.month == last.month
