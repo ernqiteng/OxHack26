@@ -1,5 +1,8 @@
 # Live decision engine on the backend box: one 48-period batch a minute past every half hour.
 # Needs /opt/tempo/models/lgbm_{p10,p50,p90}.joblib (scripts/create_backend.py --deploy copies them).
+# Runs the GREEDY optimiser on purpose (decided 24 Oct 2026, docs/description.md section 3): the LP is
+# two points better over 100 backtest weeks, not enough to swap live before the demo. To switch,
+# append `--optimiser lp` to ExecStart and redeploy. Do not change this on demo day.
 [Unit]
 Description=Tempo live decision engine
 After=network-online.target
