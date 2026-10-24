@@ -14,7 +14,25 @@ Only Part A edits these:
 - `tests/db/test_no_lookahead_training.py`, `tests/db/test_run_decision.py`, `tests/contracts/test_decisions_contract.py` (all new)
 - `DbSource.calibration()` in `tempo/dashboard/data.py` (Ayo's file: agree the change with Ayo first)
 
-## To do, in order
+## Status (Sat 24 Oct 2026, 21:05 BST): all five items done, Gate 3 reached
+
+Done by Ayo so Part B could proceed in parallel. On main after the next merge.
+
+- `make_training_set` (`tempo/forecast/dataset.py`) + `tests/db/test_no_lookahead_training.py`.
+- `scripts/train.py`: trained on 90 days of Tiger (361 decision times, 17,328 rows, 92 s). Holdout on the
+  last 7 days: p50 MAE 24.4 vs persistence 33.9; p10–p90 band held 63% of actuals against the 80% target
+  there, and 77% on the 384 settled live forecasts since (the band is on the narrow side: a Part B item
+  for the honesty panel). Model files in `models/`, copied to the backend box by
+  `scripts/create_backend.py --deploy`.
+- `run_decision` (`tempo/decide/engine.py`) + `tests/db/test_run_decision.py` + the shared
+  `tests/contracts/test_decisions_contract.py`.
+- `scripts/decide.py` runs a batch a minute past every half hour on the backend box (`tempo-decider`
+  unit); eight past-dated live batches (21–23 Oct) were written so replayable decisions exist now.
+- `DbSource.calibration()` reads settled live forecasts through `metrics.calibration()`.
+- `scripts/demo_reset.py` says GO and picked decision #441; clicked live in fork mode: Gate 3.
+  Self-grade on the eight cycles: 100% within one period, mean cost of mistiming £0.51.
+
+## To do, in order (original list, kept for reference)
 
 1. **`tempo/forecast/dataset.py::make_training_set(conn_or_df, decision_times) -> (X, y)`** (currently a stub). For each historical decision time (every 6 hours over the train window), call `build_features(conn, decision_time)`, add `horizon_k`, and join the realised price for each `target_time` as `y`. Point-in-time correctness comes by construction: features only ever come from `build_features(decision_time)`.
    - Test: `tests/db/test_no_lookahead_training.py`. Build a training set on the local Docker DB, then for every `(decision_time, target_time)` row assert that every feature value equals what `build_features(decision_time)` returns.
