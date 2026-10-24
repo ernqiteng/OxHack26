@@ -14,6 +14,7 @@ OxHack 2026. Theme: TIME. Track: HRT, Best Use of Data for Predictions and Decis
 | [docs/girik.md](docs/girik.md) | Part A: Data (Elexon → Tiger Data → features) |
 | [docs/ernqi.md](docs/ernqi.md) | Part B: Brain (battery, optimiser, forecaster, backtest) |
 | [docs/ayo.md](docs/ayo.md) | Part C: Stage (forks, workers, timing audit, dashboard, demo) |
+| [docs/ui.md](docs/ui.md) | Dashboard design spec: YC inspiration, theme tokens, screen wireframes, build order |
 
 ## Quick start
 
