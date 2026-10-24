@@ -18,9 +18,18 @@ Price model (all clock rules use UK local time, Europe/London):
 The default start (Mon 5 Jan 2026) with 60 days stays clear of clock changes, so every day has
 exactly 48 periods. Same seed -> identical frame.
 
-Known answers (7 days, default Battery, default seed), filled in once simulate() exists (Phase 1):
-    perfect-foresight profit: TODO GBP
-    simple-rule profit:       TODO GBP
+Known answers: MID prices for the first 7 days (5 to 11 Jan 2026, 336 periods, ISO week 2, so
+a windy week), default seed, default Battery (2 MWh, 1 MW, 90% round trip, GBP 20/cycle, start 1 MWh).
+Net profit after cycle cost, to 0.1 GBP (tests/unit/test_synthetic.py checks both):
+    perfect-foresight profit: 1399.6 GBP  (gross 1596.9, 9.87 cycles, nothing clipped)
+    simple-rule profit:       1264.8 GBP  (gross 1397.6, 6.64 cycles, 15.0 MWh clipped)
+Conventions these numbers assume (ernqi.md Phase 1 task 1):
+    - efficiency split sqrt(0.9) each way; a period that would overfill or overdrain the battery
+      trades only the part that fits, the rest counts as clipped and is not bought or sold
+    - cycles = MWh delivered to the grid / capacity
+    - end state of charge is free (no requirement to finish at 1 MWh)
+    - simple rule: +1 MW from 01:00 to 05:00, -1 MW from 17:00 to 19:00, UK local time
+Computed with an independent reference (numpy sim + cvxpy/HiGHS LP), not with tempo/ itself.
 """
 
 from datetime import UTC, datetime, timedelta

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -84,6 +85,52 @@ def test_wind_high_on_windy_weeks(market):
 def test_settlement_period_1_to_48_in_winter(market):
     sp = market[market.dataset == "MID"].settlement_period
     assert sp.min() == 1 and sp.max() == 48
+
+
+# --- known answers from the fixture docstring (skip until Phase 1 code exists) ---
+
+PERFECT_7D_GBP = 1399.6
+SIMPLE_RULE_7D_GBP = 1264.8
+
+
+@pytest.fixture(scope="module")
+def week1(mid):
+    w = mid.sort_values("start_time").iloc[: 7 * 48]
+    return w.value.to_numpy(), w.hour.to_numpy()
+
+
+def _phase1(module, name):
+    try:
+        mod = __import__(module, fromlist=[name])
+        return getattr(mod, name)
+    except (ImportError, AttributeError):
+        pytest.skip(f"{module}.{name} not written yet (Phase 1)")
+
+
+def _simulate_pnl(schedule_mw, prices):
+    battery_cls, simulate = _phase1("tempo.sim.battery", "Battery"), _phase1("tempo.sim.battery", "simulate")
+    try:
+        return simulate(battery_cls(), np.asarray(schedule_mw, dtype=float), prices).pnl_gbp
+    except NotImplementedError:
+        pytest.skip("simulate is still a stub (Phase 1)")
+
+
+def test_known_answer_simple_rule(week1):
+    prices, hour = week1
+    rule = np.where((hour >= 1) & (hour < 5), 1.0, np.where((hour >= 17) & (hour < 19), -1.0, 0.0))
+    assert _simulate_pnl(rule, prices) == pytest.approx(SIMPLE_RULE_7D_GBP, abs=0.1)
+
+
+def test_known_answer_perfect_foresight(week1):
+    prices, _ = week1
+    perfect_foresight = _phase1("tempo.optimise.perfect", "perfect_foresight")
+    battery_cls = _phase1("tempo.sim.battery", "Battery")
+    try:
+        plan = perfect_foresight(prices, battery_cls())
+    except NotImplementedError:
+        pytest.skip("perfect_foresight is still a stub (Phase 1)")
+    schedule = plan["mw"] if isinstance(plan, pd.DataFrame) else plan
+    assert _simulate_pnl(schedule, prices) == pytest.approx(PERFECT_7D_GBP, abs=0.1)
 
 
 def test_clock_change_day_has_50_periods():
