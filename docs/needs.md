@@ -73,13 +73,13 @@ Tested and confirmed: `/datasets/{X}`, `/balancing/pricing/market-index` and `/b
 
 ### B2. Tiger Cloud: decisions and unknowns to resolve at Gate 0
 
-- [ ] Create a **free service** as the primary database (fast forks). Region will be `us-east-1`.
-- [ ] **Unverified:** free-service storage cap and how many free services one project may hold. The docs say a free service goes read-only at its storage limit but do not state the limit. Check in Console. You need headroom for the primary plus **five** forks, and each fork is its own service with its own compute.
-- [ ] Confirm `timescaledb` extension version and that `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)` and hierarchical aggregates work on the free tier (expected yes, **unverified** on free specifically).
-- [ ] Confirm compression / columnstore policies are allowed on the free tier (**unverified**).
-- [ ] Time one fork end to end with `fork_strategy: "NOW"` and one with `"LAST_SNAPSHOT"` and record the numbers. `LAST_SNAPSHOT` is faster but can be up to an hour stale; `NOW` takes a fresh snapshot. For the timing audit `NOW` is what you want.
-- [ ] Note the fork response: it returns `service_id`, `initial_password`, `endpoint.host`, `endpoint.port` and `status`. Poll `GET /projects/{project_id}/services/{service_id}` until `status == "READY"` before connecting.
-- [ ] Delete forks after each audit: `DELETE /projects/{project_id}/services/{service_id}`.
+- [x] Create a **free service** as the primary database (fast forks). Region will be `us-east-1`. **Done 2026-10-24:** `db-40426`, service ID `g7kw81aat8`, project `hpcbhmyhmj`.
+- [x] Free-service storage cap: **750 MiB** (Console pricing panel, shared compute, $0/hr). **Already 339 MB used on an empty database** (API `metrics.storage_mb`), so only ~410 MiB is left for data. Turn on compression from the start, load NDF as latest-forecast-only, and consider skipping FUELINST; otherwise fall back to the A1 split (raw history on a standard service). Still **unverified:** how many free services one project may hold; one fork at a time worked, five at once is untested.
+- [x] Confirm `timescaledb` extension version and that `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)` and hierarchical aggregates work on the free tier. **Verified 2026-10-24:** PostgreSQL 18.6, TimescaleDB 2.31.0; a 1h cagg and a 1d cagg built on top of it both work. Drop hierarchical caggs top-down (1d before 1h), `DROP TABLE ... CASCADE` won't do it.
+- [x] Confirm compression / columnstore policies are allowed on the free tier. **Verified:** `ALTER TABLE ... SET (timescaledb.enable_columnstore = true)`, `compress_chunk()`, and `CALL add_columnstore_policy(...)` all work. Note `add_columnstore_policy` is a procedure in 2.31: use `CALL`, not `SELECT`.
+- [x] Time one fork end to end with `fork_strategy: "NOW"` and one with `"LAST_SNAPSHOT"` and record the numbers. `LAST_SNAPSHOT` is faster but can be up to an hour stale; `NOW` takes a fresh snapshot. For the timing audit `NOW` is what you want. **Measured 2026-10-24 with `scripts/time_fork.py` on an empty database:** `NOW` 34.8s to READY, `LAST_SNAPSHOT` 25.9s (API accepts the request in ~1s, fork starts `QUEUED`). Re-run after the backfill to confirm it holds with real data.
+- [x] Note the fork response: it returns `service_id`, `initial_password`, `endpoint.host`, `endpoint.port` and `status`. Poll `GET /projects/{project_id}/services/{service_id}` until `status == "READY"` before connecting. **Verified:** status goes `QUEUED` → `READY`.
+- [x] Delete forks after each audit: `DELETE /projects/{project_id}/services/{service_id}`. **Verified:** works, `scripts/time_fork.py` deletes its fork by default.
 
 Fork request body (verified from the REST reference):
 
@@ -110,7 +110,8 @@ All under `https://data.elexon.co.uk/bmrs/api/v1`. All return JSON. Use `/stream
 Quirks to code around:
 
 - **7-day cap** on every non-stream endpoint. Stream endpoints returned 60 days and 1 year without complaint, but keep bulk calls to ~30 to 90 days each so a single failure is cheap to retry.
-- **N2EX MID rows with zero price/volume.** Filter to `APXMIDP`, or drop rows with `volume == 0`.
+- **N2EX MID rows with zero price/volume.** Filter to `APXMIDP`, or drop rows with `volume == 0`. Do both: APX alone still had 12 zero-volume rows in the year to 2026-10-24.
+- **`settlementPeriod` is UK local time.** In BST, `startTime 00:00Z` is SP 3 (SP 1 is 23:00Z the previous day). The year of MID contained one SP 49 and one SP 50 (26 Oct 2025 clock change). Another reason to key on `startTime`.
 - **Settlement periods 49 and 50** exist on clock-change days (the API notes this). October 25 2026 is a clock-change day in the UK, which is during OxHack. Key rows on `startTime` (UTC), not `(settlementDate, settlementPeriod)`.
 - **NDF volume.** Two years of NDF is about 30 MB per 60 days ≈ 360 MB JSON. Either load only the latest forecast per `startTime` published before each decision time, or load it all and let compression handle it. It is the dataset that makes the "millions of rows, compressed Y%" line true.
 - **WINDFOR is hourly.** Forward-fill or interpolate to half-hours.
@@ -120,7 +121,7 @@ Quirks to code around:
 ### B4. Vultr: decisions and unknowns to resolve at Gate 0
 
 - [ ] **Account limits.** Vultr caps the number of instances and spend on new accounts, raised only via a limit-increase request that support reviews manually. Check Billing → Limits on day one. You need at least **5 worker instances + 1 backend** running at once. Request an increase immediately if the cap is lower.
-- [ ] **Region.** Pick one close to the Tiger service (`us-east-1` for a free service → Vultr New Jersey `ewr`) to keep fork-to-worker latency low. The venue is in Oxford, so the dashboard backend is better in London (`lhr`); workers can be in `ewr`.
+- [x] **Region.** Decided: workers `ewr`, backend `lhr` (B8 item 4). Pick one close to the Tiger service (`us-east-1` for a free service → Vultr New Jersey `ewr`) to keep fork-to-worker latency low. The venue is in Oxford, so the dashboard backend is better in London (`lhr`); workers can be in `ewr`.
 - [ ] **GPU availability** (**unverified**): list plans with `GET /v2/plans?type=vcg` (GPU plans) and check `locations`. New accounts may have no GPU quota. Decide CPU-vs-GPU training here, per the risk table.
 - [ ] **Pre-warm pool.** Instance boot plus cloud-init is typically 1 to 3 minutes, far too slow to create on click. Create the 5 workers before the demo, keep them running, and have the click trigger a *job* via the API (or a tiny HTTP call to each worker) rather than instance creation. Still show the real Vultr API being called (for example `GET /v2/instances` to pick an idle worker, or a snapshot-based create that was started earlier).
 - [ ] **Worker image.** Build one worker, snapshot it (`POST /v2/snapshots` with `instance_id`), and create the pool from the snapshot with `snapshot_id` plus `user_data` (base64 cloud-init) that injects the Tiger credentials.
@@ -208,9 +209,18 @@ MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
 
 ### B8. Gate 0 checklist (do these in the first hour)
 
-1. [ ] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it.
+1. [x] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it. Cap 750 MiB (339 MB used empty, see B2). Forks: 34.8s `NOW`, 25.9s `LAST_SNAPSHOT`.
 2. [ ] Vultr: create API key, check account instance limit, list GPU plans, deploy one tiny instance and time boot-to-ready.
-3. [ ] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3.
-4. [ ] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region.
-5. [ ] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date).
-6. [ ] Put `.env.example` in the repo with every variable from B6.
+3. [x] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3. **Done 2026-10-24, shapes match.** Both return a bare JSON list (no `data` wrapper), newest first. MID 1 year APX: 17,521 rows, 2.8 MB, 6.9s. NDF 1 week: 19,768 rows, 3.4 MB, 8.7s, 334 publishes (every ~30 min), all `boundary: "N"`. Extrapolates to ~2.1M rows / ~350 MB JSON for 2 years, matching B3.
+4. [x] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region. **Decided 2026-10-24:**
+   - **Price:** APX MID (`dataProviders=APXMIDP`), dropping `volume == 0` rows.
+   - **δ = 10 min**, so `available_at = startTime + 40 min`. Shown in the honesty panel as an assumption.
+   - **Battery:** 2 MWh, 1 MW, 90% round-trip (split as √0.9 each way), £20 per full cycle, start at 1 MWh (50% SoC).
+   - **Vultr region:** workers in `ewr` (New Jersey, next to Tiger `us-east-1`), dashboard backend in `lhr` (London).
+   - All match `.env.example`, `docs/plan.md` (`Battery`) and `docs/description.md`.
+5. [x] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date). **Checked 2026-10-24** against real MID for the last clock change (26 Oct 2025), saved as `tests/fixtures/elexon_samples/mid_2025-10-26_clock_change.json`: 50 rows, 50 distinct `startTime`, SP 1 to 50, no collisions. The design handles it (schema keys on UTC `start_time`, girik.md says never derive `start_time` from SP). Ingest code is still a stub, so `tests/unit/test_clock_change.py` (girik.md) must run against this fixture once `normalise` exists. Rules for everyone:
+   - **Never compute a settlement period from the UTC clock.** It mismatched all 50 rows that day, and is off by 2 every day in BST. SP = half-hours since UK local midnight + 1. Fixed in ayo.md (dashboard Live tab).
+   - **Horizons are 48 half-hours from now, not "one settlement day".** A clock-change day has 46 or 50 periods.
+   - **`ZoneInfo("Europe/London")` fails on Windows without the `tzdata` package.** Added to `pyproject.toml`.
+   - **Say which clock local-time rules use.** `simple_rule` (charge 01:00 to 05:00, discharge 17:00 to 19:00) and features like `hour` / `period_of_day` should use UK local time, or state UTC explicitly.
+6. [x] Put `.env.example` in the repo with every variable from B6. **Checked 2026-10-24:** all 17 B6 variables present, plus the test DB URL and `TEMPO_LIVE`.

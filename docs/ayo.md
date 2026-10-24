@@ -49,7 +49,7 @@ Timings written down. Clients merged. Dashboard skeleton runs locally with `stre
    - Pure function of the database contents: same inputs, same output, every time.
 2. `tempo/audit/orchestrator.py::run_audit(conn, decision_id, mode='inprocess') -> list[AuditRow]`: for shifts −2..2, call `replay_shift` with `run_id = f'audit-{decision_id}-{shift}'`, compute `pnl_delta_gbp = pnl[shift] - pnl[0]`, write `audits` rows. Phase 1 supports only `mode='inprocess'`.
 3. Dashboard:
-   - **Live tab:** current settlement period (computed from UTC now), latest 24 h of `prices_hh`, today's schedule from `decisions` where `run_id='live'` (empty until Phase 2), most recent hold with reason.
+   - **Live tab:** current settlement period (count half-hours since UK local midnight + 1, using `Europe/London`; **not** from the UTC clock, which is off by 2 in BST and wrong all day on clock-change days, see needs.md B8 item 5), latest 24 h of `prices_hh`, today's schedule from `decisions` where `run_id='live'` (empty until Phase 2), most recent hold with reason.
    - **Honesty tab:** `backtest_results` summary table (Ernqi's `summary`), with the four rows from description.md.
    - **Timing audit tab:** pick a decision, button runs `run_audit(mode='inprocess')`, renders five columns with PnL and delta, real decision highlighted.
    - Reads from Tiger via `TEMPO_DATABASE_URL`; cache queries for 30 s.
