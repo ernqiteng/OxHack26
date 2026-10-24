@@ -109,7 +109,8 @@ def run_inprocess(
 
 
 # -------------------------------------------------------------------------------------------------
-# Fork mode: one Tiger fork per shift, one worker per fork
+# Fork mode: Tiger fork(s) taken at click time, one worker per shift. Default layout is one shared fork
+# (free tier: 2 services per project); 'per_shift' gives every shift its own fork.
 # -------------------------------------------------------------------------------------------------
 
 SHIFT_STATES = ("queued", "forking", "ready", "replaying", "done", "failed")

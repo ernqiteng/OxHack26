@@ -255,7 +255,8 @@ shifted −2..+2 settlement periods.
   continuous aggregates.
 - **Brain:** p10/p50/p90 LightGBM forecast, cost-gated optimiser, walk-forward backtest against honest
   baselines.
-- **Stage:** each what-if runs in a Tiger zero-copy fork, replayed by a pre-warmed Vultr worker.
+- **Stage:** each click takes a Tiger zero-copy fork of live data; five pre-warmed Vultr workers replay
+  five timelines inside it in parallel.
 
 OxHack 2026, theme TIME, HRT track. Assumptions on screen: APX MID is the tradeable price; MID availability is
 period end + 10 min.

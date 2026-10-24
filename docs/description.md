@@ -117,11 +117,11 @@ This is the part that answers the TIME theme directly. A prediction can be right
 Click any decision on the dashboard and Tempo:
 
 1. **Spawns five alternative timelines.** The same action, shifted by −2, −1, 0, +1 and +2 settlement periods. In other words: what if we had done this an hour earlier, half an hour earlier, exactly when we did, half an hour later, or an hour later?
-2. **Runs each timeline in its own Tiger Data zero-copy fork.** Each what-if gets an isolated, writable copy of the database. It writes its own simulated battery state, its own decisions and its own profit-and-loss without touching the live system or the other forks. This is the honest reason forks are load-bearing here: five parallel what-ifs that each need to *write* state, not just read the past. The live database runs as a Tiger free service, where forks are copy-on-write and complete in 30 to 90 seconds. On a standard service a fork takes 5 to 20 minutes, which would be too slow for a live click.
-3. **Dispatches the replays to a pre-warmed pool of Vultr workers.** Each worker, provisioned via the Vultr API, picks up one fork and replays the battery forward from that point.
+2. **Takes a Tiger Data zero-copy fork of the live database at the moment of the click.** The fork is an isolated, writable copy of everything Tempo knew at that instant. All five what-ifs run inside it, each writing its own simulated battery state and profit-and-loss under its own run id, so they never touch the live system or each other. This is the honest reason the fork is load-bearing: five parallel what-ifs that each need to *write* state, not just read the past, against a frozen copy of the live data. The live database runs as a Tiger free service, where a fork is copy-on-write and was ready in 36 to 42 seconds in our tests. On a standard service a fork takes 5 to 20 minutes, which would be too slow for a live click. (We first designed one fork per timeline; see section 11 for why it is one fork per click.)
+3. **Dispatches the five replays to a pre-warmed pool of Vultr workers in parallel.** Each worker, provisioned via the Vultr API, takes one timeline, connects to the fork and replays the battery forward from that point.
 4. **Shows all five side by side** on the dashboard, with the real decision highlighted and a concrete number attached: *"charging one period later would have cost £14."*
 
-The same shift analysis also runs automatically on every completed charge-discharge cycle, as in-process backtest shifts rather than forks, which gives Tempo a running self-grade. Forks are reserved for the on-stage audit:
+The same shift analysis also runs automatically on every completed charge-discharge cycle, as in-process backtest shifts rather than a fork, which gives Tempo a running self-grade. Forks are reserved for the on-stage audit:
 
 > "Tempo's timing was within one settlement period of hindsight-optimal on 71% of cycles this month."
 
@@ -179,11 +179,11 @@ decision + forecast + timestamp written to decisions hypertable
 honesty dashboard             timing audit
 (backtest table,              (click or automatic)
  calibration,                        │
- regime breakdown)            Tiger Data zero-copy forks
-                              shifts −2 / −1 / 0 / +1 / +2
+ regime breakdown)            one Tiger Data zero-copy fork
+                              of live data, taken on click
                                      │
-                              Vultr workers replay
-                              battery in each fork
+                              5 Vultr workers replay shifts
+                              −2 / −1 / 0 / +1 / +2 in parallel
                                      │
                               side-by-side £ comparison
                               + running self-grade
@@ -199,13 +199,13 @@ honesty dashboard             timing audit
 - **Free service as the primary database.** Free services use copy-on-write storage, which is what makes forks zero-copy and fast enough to create on a click.
 - **Hierarchical continuous aggregates** for multi-timescale features and live dashboard charts. The half-hourly, daily and weekly rollups update themselves as new data arrives.
 - **Compression** on two years of history, shown on screen ("X million rows, compressed Y%"), with a two-year query returning instantly.
-- **Zero-copy forks** as the timing-audit engine. Each what-if timeline needs its own writable copy of the database. Nothing in Layer 2 works without them.
+- **Zero-copy forks** as the timing-audit engine. The what-if timelines need a writable copy of the live database, frozen at the moment of the click, that they can scribble on without touching live. Nothing in Layer 2 works without it.
 
 Take Tiger Data away and both the feature pipeline and the signature mechanic go with it.
 
 ### Vultr
 
-- **Parallel replay workers** for the timing audit, provisioned via the Vultr API. Judges watch workers pick up forks and return results live.
+- **Parallel replay workers** for the timing audit, provisioned via the Vultr API. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
 - **Parallel walk-forward backtests**, with a reported speed-up over running them in sequence.
 - **Model training**, on GPU if the neural net earns its place. If it doesn't, we report the CPU vs GPU comparison honestly.
 - **Battery-size sweep** (stretch): re-running the backtest across different battery capacities is a naturally parallel workload.
@@ -222,7 +222,7 @@ The timing audit doesn't happen without Vultr compute provisioned on demand.
 | 20s | Hook | "Electricity is cheap at 3am and expensive at 6pm. A battery can make money in between. The hard part is *when*." |
 | 35s | Live view | Current settlement period, next 24h forecast with uncertainty bands, today's schedule, and a recent hold with its reason: "expected spread didn't cover the 10% efficiency loss." |
 | 50s | Replay | Rewind to a windy week, play it forward: forecast vs reality, battery charging and selling, £ ticking up. |
-| 40s | Timing audit | Click a decision. Five forks spin up, Vultr workers replay them, side-by-side result: "an hour later would have cost £31." Then the running self-grade. |
+| 40s | Timing audit | Click a decision. Tiger forks the live database, five Vultr workers replay five timelines in it in parallel, side-by-side result: "an hour later would have cost £31." Then the running self-grade. While the fork spins up (~40 s), tell the challenge from section 11. |
 | 30s | Honesty panel | Backtest table, % of perfect foresight, calibration, plain statement of where it's weak. |
 | 5s | Close | "Most projects stop at a prediction. We turned it into a decision, and then proved whether we made it at the right time." |
 
@@ -277,8 +277,9 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 | Model only slightly beats the simple rule | Fine. % of perfect foresight keeps it interesting, and showing where prediction helps and where it doesn't is what HRT respects |
 | Wrong price series | APX Market Index Data, decided. Filter out N2EX rows. Don't switch |
 | Lookahead bugs | Publish-time stamp on every row where Elexon provides one, stated availability delay for MID, features only from data available before decision time, check that only perfect foresight knows the future |
-| Vultr account instance limit | Request an increase at Gate 0. Fall back to fewer, larger workers each replaying several forks |
-| Forks too slow on the day | Primary database is a free service (30 to 90 second forks). If still slow, pre-create the five forks before the demo and have the click dispatch workers into them |
+| Vultr account instance limit | Request an increase at Gate 0. Fall back to fewer workers; the pool queues the five timelines across whatever workers exist |
+| Forks too slow on the day | Primary database is a free service (forks ready in 36 to 42 s in testing). If still slow, pre-create the fork before the demo and have the click dispatch workers into it, or switch the toggle to in-process ("same replay, run locally") |
+| Tiger free tier allows only 2 services | Audit uses one fork per click (section 11). Nobody creates other forks on demo day; `demo_reset.py` checks only the primary exists. The audit button is disabled while an audit runs |
 | Unfamiliar domain for judges | Open with the buy-low-sell-high line |
 | Vultr GPU not available | Train on CPU, lean on parallel workers as the Vultr story |
 
@@ -314,8 +315,28 @@ What sets it apart:
 
 ### Vultr
 
-Parallel workers that judges watch pick up forks and return results, parallel walk-forward backtests with a reported speed-up, and model training. The timing audit doesn't happen without Vultr compute provisioned on demand.
+Parallel workers that judges watch pick up timelines and return results, parallel walk-forward backtests with a reported speed-up, and model training. The timing audit doesn't happen without Vultr compute provisioned on demand.
 
 ### Tiger Data
 
-Hypertables for the grid stream and the decisions log, hierarchical continuous aggregates for features and charts, compression for two years of history, and zero-copy forks as the engine of the timing audit. Take Tiger Data away and both the feature pipeline and the signature mechanic go with it.
+Hypertables for the grid stream and the decisions log, hierarchical continuous aggregates for features and charts, compression for two years of history, and a zero-copy fork as the engine of the timing audit. Take Tiger Data away and both the feature pipeline and the signature mechanic go with it.
+
+---
+
+## 11. Challenges we hit (say these in the pitch)
+
+Judges ask "what went wrong?". These are true, specific, and show we tested against the real services rather than the brochure.
+
+### Tiger's free tier allows only two databases, so five forks became one
+
+**What we planned.** One zero-copy fork per timeline: five forks of the live database spun up on the click, each replayed by its own Vultr worker.
+
+**What happened.** When we ran it against real Tiger, the third service was refused with `403 ENTITLEMENT_ERROR: "You have reached your free service limit"`. A free Tiger project holds two services at once, the live database plus one fork. The fast copy-on-write forks only exist on free services (paid-service forks take 5 to 20 minutes), so paying would not have helped.
+
+**What we did.** One fork per click, frozen at the moment of the click, with all five timelines replayed inside it in parallel by five Vultr workers. Each timeline writes its own battery state under its own run id, so they stay isolated from each other and from live. We proved the change costs nothing in correctness: an automated test shows the fork replay equals the in-process replay to the penny, in both the one-fork and five-fork layouts. The five-fork layout is still in the code behind one setting (`TEMPO_AUDIT_FORKS=per_shift`) for an account with a higher limit.
+
+**What it taught us.** The limit also means nothing else may hold a Tiger service during the demo, and a second click must wait for the first audit to finish. The pre-demo check and a disabled button handle both.
+
+**Pitch line (~10 s, say it while the fork spins up):**
+
+> "We designed this as five forks, one per timeline. When we ran it on real Tiger we hit the free tier's two-database limit, and paid forks take minutes, not seconds. So Tempo takes one fork of live data the moment you click, and five Vultr workers replay five timelines inside it in parallel. We have a test proving it gives exactly the same numbers to the penny."
