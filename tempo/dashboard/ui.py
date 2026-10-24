@@ -181,7 +181,7 @@ def delta_bars(rows: pd.DataFrame) -> alt.LayerChart:
     df["pnl_delta_gbp"] = df.pnl_delta_gbp.fillna(0.0)
     base = alt.Chart(df).encode(y=alt.Y("label:N", sort=list(labels.values()), title=None))
     bars = base.mark_bar(cornerRadius=3).encode(
-        x=alt.X("pnl_delta_gbp:Q", title="£ versus as decided"),
+        x=alt.X("pnl_delta_gbp:Q", title="£ versus as decided", axis=alt.Axis(tickCount=6)),
         color=alt.condition("datum.pnl_delta_gbp < 0", alt.value(T.BAD), alt.value(T.GOOD)),
         tooltip=["label:N", "pnl_delta_gbp:Q"],
     )
