@@ -4,19 +4,24 @@ Owner: Ayo. See docs/ayo.md Phase 2 task 1.
 
 Runs on each Vultr worker under systemd (deploy/systemd/tempo-worker.service). It is stateless: the
 orchestrator sends the fork's DSN with every request, so the worker reads nothing from the environment
-except its own id (WORKER_ID, else the hostname). A bad DSN fails fast with a 500 and a message, never a hang.
+except its own id (WORKER_ID, else the hostname) and its shared token (TEMPO_WORKER_TOKEN). A bad DSN fails
+fast with a 500 and a message, never a hang.
+
+When TEMPO_WORKER_TOKEN is set, /replay requires `Authorization: Bearer <token>`. Without it, a worker on a
+public IP would run replays against any database anyone points it at. The Vultr image always sets it.
 
     uvicorn tempo.worker.main:app --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
 
+import hmac
 import os
 import socket
 import threading
 from datetime import UTC, datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from tempo.audit.refsim import resolve_sim
@@ -55,14 +60,26 @@ def health() -> dict:
         "ok": True,
         "worker_id": worker_id(),
         "simulator": resolve_sim()[1],
+        "auth": bool(os.environ.get("TEMPO_WORKER_TOKEN")),
         "busy": _state["busy"],
         "served": _state["served"],
     }
 
 
+def check_token(authorization: str | None) -> None:
+    expected = os.environ.get("TEMPO_WORKER_TOKEN", "")
+    if not expected:
+        return
+    given = (authorization or "").removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(given.encode(), expected.encode()):
+        raise HTTPException(401, "missing or wrong worker token")
+
+
 @app.post("/replay", response_model=ReplayResponse)
-def replay(req: ReplayRequest) -> ReplayResponse:
+def replay(req: ReplayRequest, authorization: str | None = Header(default=None)) -> ReplayResponse:
     import psycopg
+
+    check_token(authorization)
 
     started = datetime.now(tz=UTC)
     with _lock:

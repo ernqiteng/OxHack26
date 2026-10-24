@@ -46,3 +46,13 @@ def test_replay_unroutable_host_times_out_under_10s():
 def test_replay_validates_body():
     r = client.post("/replay", json={"database_url": "", "decision_id": 1, "shift": 99, "run_id": "t"})
     assert r.status_code == 422
+
+
+def test_replay_requires_token_when_set(monkeypatch):
+    monkeypatch.setenv("TEMPO_WORKER_TOKEN", "s3cret")
+    body = {"database_url": "postgres://x:y@127.0.0.1:1/db", "decision_id": 1, "shift": 0, "run_id": "t"}
+    assert client.post("/replay", json=body).status_code == 401
+    assert client.post("/replay", json=body, headers={"Authorization": "Bearer nope"}).status_code == 401
+    ok = client.post("/replay", json=body, headers={"Authorization": "Bearer s3cret"})
+    assert ok.status_code == 500 and "cannot connect" in ok.json()["detail"]  # past auth, fails on the DSN
+    assert client.get("/health").json()["auth"] is True
