@@ -144,7 +144,7 @@ def run_strategy(
 def pct_of_perfect(pnl: float, perfect_pnl: float) -> float:
     if abs(perfect_pnl) < 1e-9:  # nothing could be earned: holding is perfect, anything else is not
         return 100.0 if pnl >= -1e-9 else 0.0
-    return 100.0 * pnl / perfect_pnl
+    return round(100.0 * pnl / perfect_pnl, 9)  # perfect / perfect is 100.00000000000001 in floats otherwise
 
 
 def weekly_regimes(grid: pd.DataFrame, windows) -> dict:
