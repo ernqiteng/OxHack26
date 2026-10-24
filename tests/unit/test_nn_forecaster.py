@@ -106,3 +106,18 @@ def test_tempo_nn_model_uses_the_nn(synthetic):
     grid, window = synthetic
     model = tempo_nn_model(frames_from_grid(grid), device="cpu").fit(window.train_start, window.test_start)
     assert isinstance(model, NNQuantileForecaster)
+
+
+def test_a_feature_constant_in_training_does_not_explode_at_test():
+    """Found on the early walk-forward weeks: hours_since_last_price is constant at the 6-hourly training
+    decisions and a minute different at test time. With a ~0 scale that was z = 16,700 and p50 forecasts of
+    £10,000+/MWh for prices around £80. A constant training feature must leave predictions in a sane range."""
+    X, y = random_xy()
+    X["hours_since_last_price"] = 0.17  # constant in training
+    m = NNQuantileForecaster(device="cpu", max_epochs=40)
+    m.fit(X, y)
+    X_test = X.copy()
+    X_test["hours_since_last_price"] = 0.17 + 1 / 60  # one minute different at decision time
+    q = m.predict(X_test)
+    span = y.max() - y.min()
+    assert q.p50.between(y.min() - span, y.max() + span).all(), (q.p50.min(), q.p50.max())

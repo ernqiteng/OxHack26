@@ -24,6 +24,10 @@ MAX_EPOCHS = 300
 PATIENCE = 20
 LR = 1e-2
 VAL_FRACTION = 0.15
+# A feature constant in the training window (std below this) keeps scale 1 instead of ~0. Otherwise a tiny
+# change at test time explodes: hours_since_last_price is constant at the 6-hourly training decisions and one
+# minute different at test decisions, which gave z = 16,700 and p50 forecasts of £10,000+/MWh.
+MIN_STD = 1e-3
 
 
 def _torch():
@@ -76,7 +80,8 @@ class NNQuantileForecaster:
         Xf, yv = Xf[keep], yv[keep]
 
         # Scale on the training rows only (the caller passes only training-window rows).
-        self.x_mean, self.x_std = Xf.mean(axis=0), Xf.std(axis=0) + 1e-6
+        std = Xf.std(axis=0)
+        self.x_mean, self.x_std = Xf.mean(axis=0), np.where(std < MIN_STD, 1.0, std) + 1e-6
         self.y_mean, self.y_std = float(yv.mean()), float(yv.std() + 1e-6)
         Xs, ys = (Xf - self.x_mean) / self.x_std, (yv - self.y_mean) / self.y_std
 
