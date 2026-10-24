@@ -44,3 +44,17 @@ def test_backtest_summary_from_table(market):
     assert summary.pct_of_perfect.tolist() == [50.0, 80.0, 100.0]
     assert summary.strategy.iloc[-1].startswith("Perfect")
     assert len(src.backtest_by_regime()) == 6
+
+
+def test_weak_points_come_from_backtest_rows(market):
+    with market.conn.cursor() as cur:
+        for wk, regime in [(date(2026, 1, 5), "calm"), (date(2026, 1, 12), "windy")]:
+            for strat, pnl in [("simple_rule", 90.0), ("persistence_greedy", 95.0), ("perfect", 100.0)]:
+                cur.execute(
+                    "INSERT INTO backtest_results VALUES ('bt-2', %s, %s, %s, 100, %s, %s)",
+                    (wk, strat, pnl, pnl, regime),
+                )
+    src = DbSource(market.conn)
+    lines = src.weak_points()
+    assert "weak_points" not in src.notes
+    assert lines and all(isinstance(line, str) and line for line in lines)
