@@ -68,3 +68,30 @@ def test_completed_job_shape():
 
     job = CompletedJob(1, pd.DataFrame({"shift": list(SHIFTS)}), note="synthetic")
     assert job.done and job.states() == {s: "done" for s in SHIFTS} and job.log_lines() == []
+
+
+def frame(deltas):
+    import pandas as pd
+
+    return pd.DataFrame({"shift": list(deltas), "pnl_delta_gbp": list(deltas.values())})
+
+
+def test_hero_sentence_names_worst_shift_when_tempo_was_best():
+    from tempo.dashboard.jobs import hero_sentence
+
+    s = hero_sentence(frame({-2: -52.95, -1: -20.0, 0: 0.0, 1: -14.3, 2: -30.7}), "charge")
+    assert s == "Charging an hour earlier would have cost £52.95. Tempo picked the best of the five."
+
+
+def test_hero_sentence_admits_a_better_shift():
+    from tempo.dashboard.jobs import hero_sentence
+
+    s = hero_sentence(frame({-2: -5.0, -1: 5.2, 0: 0.0, 1: -1.0, 2: -9.0}), "discharge")
+    assert s == "Selling 30 minutes earlier would have earned £5.20 more. Tempo mistimed this one."
+
+
+def test_hero_sentence_handles_no_difference_and_missing():
+    from tempo.dashboard.jobs import hero_sentence
+
+    assert hero_sentence(frame({-2: 0.0, -1: 0.0, 0: 0.0, 1: 0.0, 2: 0.0}), "charge").startswith("Shifting")
+    assert hero_sentence(frame({-2: None, -1: None, 0: None, 1: None, 2: None}), "charge") is None
