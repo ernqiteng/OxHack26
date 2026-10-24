@@ -23,6 +23,24 @@ from tempo.sim.battery import Battery, simulate
 TINY_MW = 1e-3
 
 
+def _executable(mw: np.ndarray, battery: Battery) -> np.ndarray:
+    """Zero flows under TINY_MW, then trim each period to what the battery can do. Zeroing is not free:
+    dropping a tiny early sale leaves energy in the battery, so a later charge to exactly full overfills
+    it. Trimming can make a flow tiny in turn, so repeat until nothing changes."""
+    s = np.sqrt(battery.rt_efficiency)
+    mw = mw.copy()
+    for _ in range(len(mw) + 1):
+        mw[np.abs(mw) < TINY_MW] = 0.0
+        soc = np.concatenate([[battery.soc_mwh], simulate(battery, mw, np.zeros(len(mw))).soc_path])
+        delta = np.diff(soc)
+        done = np.where(delta > 0, delta / (0.5 * s), delta * s / 0.5)  # MW the battery executed
+        clipped = np.abs(mw) - np.abs(done) > 1e-12
+        if not clipped.any():
+            return mw
+        mw[clipped] = done[clipped]
+    raise RuntimeError("LP schedule did not settle to an executable one")  # each pass only shrinks flows
+
+
 class LPOptimiser:
     def __init__(self, conservative: bool = False):
         self.conservative = conservative
@@ -39,8 +57,7 @@ class LPOptimiser:
         c, d = _solve(buy, battery, exclusive=False, sell=sell)
         if np.minimum(c, d).max() > EPS:
             c, d = _solve(buy, battery, exclusive=True, sell=sell)
-        mw = c - d
-        mw[np.abs(mw) < TINY_MW] = 0.0
+        mw = _executable(c - d, battery)
 
         spread = np.full(len(mw), np.nan)
         reason = [""] * len(mw)

@@ -50,6 +50,18 @@ def test_lp_schedule_respects_every_constraint(q, soc0, conservative):
     assert (plan.reason.str.len() > 0).all()
 
 
+def test_zeroing_a_tiny_sale_does_not_overfill():
+    """Hypothesis found this: the LP sells the 6e-5 MWh it starts with (0.1 kW, under TINY_MW) and then
+    charges to exactly full. Zeroing that sale left the energy in, so the full charge overfilled."""
+    p = np.full(N, 11.0)
+    p[1:6] = 0.0
+    q = pd.DataFrame({"p10": p, "p50": p, "p90": p}, index=TIMES)
+    b = Battery(soc_mwh=6.103515625e-05)
+    plan = LPOptimiser().plan(q, b)
+    assert pnl(b, plan, p).clipped_mwh < 1e-9
+    assert (plan.mw[plan.mw != 0].abs() >= 1e-3).all()
+
+
 def test_conservative_trades_less_when_bands_are_wide():
     """p50 spread pays, but buying at p90 and selling at p10 does not: the conservative LP holds."""
     p50 = np.full(N, 50.0)

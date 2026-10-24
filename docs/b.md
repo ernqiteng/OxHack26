@@ -17,7 +17,7 @@ Only Part B edits these:
 
 ## To do, in order
 
-1. **Fix the failing LP test** before building on the LP. `tests/unit/test_lp_vs_greedy.py::test_lp_schedule_respects_every_constraint` fails on main. Hypothesis found a case with `soc0=6.1e-05` where the LP schedule, re-simulated, clips 6.4e-05 MWh against a 1e-6 tolerance. Find out whether the LP lets the state of charge go slightly negative (a constraint or rounding issue in `lp.py`) or the tolerance is just too strict, and fix the right one.
+1. ~~**Fix the failing LP test.**~~ Done. It was a real bug in `lp.py`, not a strict tolerance. The LP sold the 6e-5 MWh it started with (0.1 kW), then charged to exactly full; zeroing flows under `TINY_MW` dropped that sale, so the full charge overfilled the battery. `_executable()` now trims each period to what the battery can do after zeroing. Regression test: `test_zeroing_a_tiny_sale_does_not_overfill`. Full suite green (390/390).
 2. **`tempo` and `tempo_lp` strategies in the walk-forward backtest.** `walkforward.STRATEGIES` has only `simple_rule`, `persistence_greedy` and `perfect`. Add:
    - `tempo` (LightGBM + greedy)
    - `tempo_lp` (LightGBM + LP)
@@ -54,4 +54,4 @@ Only Part B edits these:
 - **Nobody creates Tiger services or forks on demo day.** The free tier holds the primary and the audit's fork only (description.md section 11).
 - **Ignore Ayo's rehearsal batch** (`run_id='selftest'`, dated 21 Oct) on Tiger. It is not live data.
 - **Tests:** DB tests need the local Docker DB (`bash scripts/dev_db.sh`). On Windows, a test run hangs rather than skipping if Docker isn't running.
-- **Known failure, owned by Part B:** `tests/unit/test_lp_vs_greedy.py::test_lp_schedule_respects_every_constraint` (item 1 above).
+- **No known test failures:** the LP failure is fixed (b.md item 1).
