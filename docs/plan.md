@@ -65,8 +65,11 @@ tests/
 scripts/
   dev_db.sh            docker run timescale/timescaledb-ha, apply schema
   backfill.py, poll.py, train.py, backtest.py, demo_reset.py
+docs/                  description.md, needs.md, plan.md, girik.md, ernqi.md, ayo.md
+models/                trained models (gitignored)
 .env.example
-Makefile               make test / make test-db / make test-live / make lint
+pyproject.toml         deps, pytest markers, ruff
+Makefile               make setup / test / test-db / test-live / lint / db / dashboard
 ```
 
 ---
