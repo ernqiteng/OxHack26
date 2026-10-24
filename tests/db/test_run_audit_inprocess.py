@@ -59,3 +59,18 @@ def test_one_failed_shift_still_writes_the_others(market):
     stored = audits(market.conn, did)
     assert stored[4][1] is None and stored[4][2] is None
     assert all(r[1] is not None for r in stored[:4])
+
+
+def test_rerunning_an_audit_does_not_hit_battery_state_key(market):
+    """battery_state's PRIMARY KEY (ts, run_id) rejects duplicates; a retry must clear and rewrite."""
+    market.prices(targets(), day_prices())
+    did = market.decisions(np.tile([1.0, 0.0, -1.0, 0.0], 12))
+
+    first = run_audit(market.conn, did)
+    second = run_audit(market.conn, did)
+
+    assert [r.pnl_gbp for r in first] == [r.pnl_gbp for r in second]
+    assert all(r.error is None for r in second)
+    for s in (-2, -1, 0, 1, 2):
+        assert len(market.state(f"audit-{did}-{s}")) == 48
+    assert len(audits(market.conn, did)) == 10  # audits keeps history; one set per run
