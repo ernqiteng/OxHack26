@@ -21,8 +21,14 @@ def test_synthetic_run_prints_honesty_table(backtest, capsys):
     out = capsys.readouterr().out
     assert "4 test weeks" in out and "Honesty table" in out and "Perfect knowledge of the future" in out
     assert "WARNING" not in out
-    assert set(results.strategy) == {"simple_rule", "persistence_greedy", "perfect"}
+    assert set(results.strategy) == {"simple_rule", "persistence_greedy", "tempo", "tempo_lp", "perfect"}
+    assert "Tempo (LightGBM forecast + LP optimiser)" in out
     assert (results.run_id == "t").all()
+
+
+def test_no_tempo_skips_training(backtest):
+    results = backtest.main(["--source", "synthetic", "--run-id", "t", "--no-tempo"])
+    assert set(results.strategy) == {"simple_rule", "persistence_greedy", "perfect"}
 
 
 def test_write_refused_for_synthetic(backtest):

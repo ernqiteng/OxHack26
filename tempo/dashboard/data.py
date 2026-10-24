@@ -15,12 +15,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 
 LONDON = ZoneInfo("Europe/London")
+REPLAY_WEEK_PATH = Path(__file__).resolve().parents[2] / "models" / "replay_week.parquet"
 SHIFTS = (-2, -1, 0, 1, 2)
 STRATEGIES = ("simple_rule", "persistence_greedy", "tempo", "perfect")
 STRATEGY_LABELS = {
@@ -421,7 +423,20 @@ class DbSource:
 
     # -- Replay tab (Phase 3) ---------------------------------------------------------------------
     def replay_week(self) -> pd.DataFrame:
-        return self._synthetic("replay_week", "Replay week from backtest_results lands in Phase 3")
+        # Ernqi's stored week (scripts/replay_week.py): the median windy week for tempo in a backtest run.
+        def load():
+            if not REPLAY_WEEK_PATH.exists():
+                return None
+            week = pd.read_parquet(REPLAY_WEEK_PATH)
+            week["ts"] = pd.to_datetime(week.ts, utc=True)
+            return week
+
+        return self._try(
+            "replay_week",
+            load,
+            self.fallback.replay_week,
+            empty_note="No stored replay week (run scripts/replay_week.py)",
+        )
 
     # -- Timing audit tab -------------------------------------------------------------------------
     def recent_decisions(self, limit: int = 200) -> pd.DataFrame:

@@ -17,34 +17,25 @@ Only Part B edits these:
 
 ## To do, in order
 
-1. **Fix the failing LP test** before building on the LP. `tests/unit/test_lp_vs_greedy.py::test_lp_schedule_respects_every_constraint` fails on main. Hypothesis found a case with `soc0=6.1e-05` where the LP schedule, re-simulated, clips 6.4e-05 MWh against a 1e-6 tolerance. Find out whether the LP lets the state of charge go slightly negative (a constraint or rounding issue in `lp.py`) or the tolerance is just too strict, and fix the right one.
-2. **`tempo` and `tempo_lp` strategies in the walk-forward backtest.** `walkforward.STRATEGIES` has only `simple_rule`, `persistence_greedy` and `perfect`. Add:
-   - `tempo` (LightGBM + greedy)
-   - `tempo_lp` (LightGBM + LP)
+1. ~~**Fix the failing LP test.**~~ Done. It was a real bug in `lp.py`, not a strict tolerance. The LP sold the 6e-5 MWh it started with (0.1 kW), then charged to exactly full; zeroing flows under `TINY_MW` dropped that sale, so the full charge overfilled the battery. `_executable()` now trims each period to what the battery can do after zeroing. Regression test: `test_zeroing_a_tiny_sale_does_not_overfill`. Full suite green (390/390).
+2. ~~**`tempo` and `tempo_lp` strategies in the walk-forward backtest.**~~ Done. Run **`db-20261024T202144Z`** on Tiger (500 rows, the latest run, so the dashboard shows the Tempo row): over 100 unseen weeks, **tempo 66.4% of perfect, tempo_lp 68.3%**, persistence + greedy 52.9%, simple rule 33.1%. No week above 100% (tempo's best is 90.2%), tempo never loses money in a week (worst 31.2%), and tempo_lp beats persistence in 81 of 100 weeks. Windy vs calm: tempo_lp 67.1% vs 64.2%.
+   - Features: `tempo/backtest/features.py` answers `build_features`' own SQL from frames loaded once (`FrameConn`), so the backtest runs Girik's `build_features` unchanged. `tests/db/test_backtest_features.py` checks it against the real database on two synthetic markets; three deliberate leaks each make it fail.
+   - `TempoModel` trains per window every 6 h over the train days, on targets before `test_start` only, and plans each UK test day a minute before its first period. `scripts/backtest.py --no-tempo` skips it. A full run takes about 7 minutes.
+   - **Tell Girik:** `build_features` raised `TypeError` instead of its "no ... published" `ValueError` when a decision's window had no WINDFOR/NDF rows at all (an empty Series without a DatetimeIndex). Fixed in `build.py` with `_forecast_series()`; regression test in `tests/db/test_backtest_features.py`.
+3. ~~**Replay week for Ayo.**~~ Done. `models/replay_week.parquet` (+ `.json`): the windy week of **2026-06-11**, chosen as the median windy week for tempo in `db-20261024T202144Z` (62.9% of perfect, GBP 611.32), not the best. Same columns as the synthetic week. `scripts/replay_week.py` rebuilds it and refuses to write unless the final cumulative PnL matches the backtest's `pnl_gbp` for that week. `DbSource.replay_week()` now reads it (a small change in Ayo's `data.py`: tell Ayo) and falls back to synthetic with a note if the file is missing.
+4. ~~**Lint.**~~ Done. `ruff check .` and `ruff format --check .` are clean on the whole repo (Ayo's `engine.py` rewrite cleared the last Part A error). f-strings were split so every printed sentence is unchanged.
+5. ~~**Housekeeping.**~~ Already done by others: the Gate 2 date is at the top of ernqi.md, and `scratch_seen.txt` is gone from main.
 
-   Both retrain per window on that window's train days only.
-   - Features: calling `build_features` on Tiger for every decision time in 100 windows would take hours, so build the same `FEATURE_COLUMNS` in memory from `prices_hh` + `grid_raw` frames (for example in `tempo/backtest/features.py`). Respect the same point-in-time rules as `build_features`: forecasts with `available_at <= decision_time`, and prices only once `bucket + 40 min <= decision_time`. Prove it with a DB test showing your frame equals `build_features` on the local DB for a few decision times.
-   - Re-run `scripts/backtest.py --source db --write` with a new `run_id`. Check that no week beats perfect: one that does means a lookahead leak.
-3. **Replay week for Ayo** (ayo.md Phase 3 task 2): one windy week's `(ts, actual, p10, p50, p90, mw, soc_mwh, cum_pnl_gbp)` at 48 rows a day, taken from the `tempo` strategy in item 2. A parquet in `models/` or a query Ayo can run both work; `DbSource.replay_week()` is the hook (synthetic today). Agree the shape with Ayo.
-4. **Lint.** `ruff check .` has 20 errors in Part B's files:
-   - `tempo/backtest/metrics.py` (7)
-   - `tests/unit/test_backtest_synthetic.py` (3)
-   - `tests/unit/test_selfgrade_known.py` (2)
-   - `walkforward.py` (2)
-   - `scripts/backtest.py` (2)
-   - one each in `test_walkforward_windows.py`, `test_metrics_summary.py`, `sim/battery.py` and `optimise/lp.py`
+Also fixed along the way: `test_lp_at_least_greedy_on_p50` failed on a new hypothesis case (flat 339 GBP/MWh, 3.2e-6 MWh stored: greedy sold the sliver for 0.1p, the LP refuses sub-kW trades by design). Its tolerance is now sized from `TINY_MW`.
 
-   `ruff format` also wants to reformat `walkforward.py` and `tests/unit/forecast_frames.py`. `ruff check . --fix && ruff format .` clears most of it. The pre-push hook (`make lint`) stays red until this is done, plus Part A's one error in `engine.py`.
-5. **Housekeeping:**
-   - Write the Gate 2 date (Sat 24 Oct 2026) at the top of ernqi.md.
-   - `scratch_seen.txt` is already deleted on `ernqi`; it disappears from main at the next merge.
+**State:** full suite 463 passed, 3 skipped (Girik's two-year query tests need a full local backfill DB).
 
 ## Hand-offs
 
 | To | What | When |
 |---|---|---|
-| Ayo | new `run_id` with the Tempo row | after item 2 |
-| Ayo | replay week shape and data | item 3 |
+| Ayo | new `run_id` with the Tempo row: `db-20261024T202144Z` (latest, picked up automatically) | done |
+| Ayo | replay week: `models/replay_week.parquet`, read by `DbSource.replay_week()` | done |
 
 ## Shared rules (same text in a.md and b.md)
 
@@ -54,4 +45,4 @@ Only Part B edits these:
 - **Nobody creates Tiger services or forks on demo day.** The free tier holds the primary and the audit's fork only (description.md section 11).
 - **Ignore Ayo's rehearsal batch** (`run_id='selftest'`, dated 21 Oct) on Tiger. It is not live data.
 - **Tests:** DB tests need the local Docker DB (`bash scripts/dev_db.sh`). On Windows, a test run hangs rather than skipping if Docker isn't running.
-- **Known failure, owned by Part B:** `tests/unit/test_lp_vs_greedy.py::test_lp_schedule_respects_every_constraint` (item 1 above).
+- **No known test failures:** the LP failure is fixed (b.md item 1).

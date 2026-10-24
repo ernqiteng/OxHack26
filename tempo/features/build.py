@@ -151,6 +151,13 @@ def _check_mid_offset(cur: psycopg.Cursor, T: datetime, delay: int) -> None:
         )
 
 
+def _forecast_series(rows) -> pd.Series:
+    """start_time -> value with a UTC DatetimeIndex even when there are no rows, so that comparing the index
+    with a Timestamp below works and an empty horizon reaches the 'no ... published' ValueError."""
+    index = pd.DatetimeIndex([pd.Timestamp(s).tz_convert("UTC") for s, _ in rows], tz="UTC")
+    return pd.Series([float(v) for _, v in rows], index=index, dtype=float)
+
+
 def build_features(conn: psycopg.Connection, decision_time: datetime, horizon: int = 48) -> pd.DataFrame:
     """Features for the next `horizon` half-hours, using only data available at decision_time.
 
@@ -230,8 +237,7 @@ def build_features(conn: psycopg.Connection, decision_time: datetime, horizon: i
 
     # --- forecasts: latest publication at or before decision_time ----------------------------------
     fc_missing = np.zeros(len(targets))
-    wind = pd.Series({pd.Timestamp(s).tz_convert("UTC"): float(v) for s, v in rows["wind"]}, dtype=float)
-    demand = pd.Series({pd.Timestamp(s).tz_convert("UTC"): float(v) for s, v in rows["demand"]}, dtype=float)
+    wind, demand = _forecast_series(rows["wind"]), _forecast_series(rows["demand"])
     for col, series, step in (("wind_fc", wind, "1h"), ("demand_fc", demand, "30min")):
         keys = targets.floor(step)  # WINDFOR is hourly: 10:30 reads the 10:00 forecast (forward-fill)
         vals = series.reindex(keys).to_numpy(dtype=float)

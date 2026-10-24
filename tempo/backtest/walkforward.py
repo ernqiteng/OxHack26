@@ -71,7 +71,8 @@ def simple_rule(train_df: pd.DataFrame, test_df: pd.DataFrame, battery: Battery)
 
 
 def persistence_greedy(train_df: pd.DataFrame, test_df: pd.DataFrame, battery: Battery) -> np.ndarray:
-    """Each day at local midnight: forecast = same period yesterday, greedy plan, carry SoC to the next day."""
+    """Each day at local midnight: forecast = same period yesterday, greedy plan, carry SoC to the next
+    day."""
     history = pd.concat([train_df, test_df], ignore_index=True)
     published = history.set_index("bucket").price
     publish_time = published.index + pd.Timedelta(minutes=30) + MID_DELAY
@@ -105,6 +106,105 @@ STRATEGIES: dict[str, StrategyFn] = {
     "persistence_greedy": persistence_greedy,
     "perfect": perfect,
 }
+
+
+# --- tempo: LightGBM forecast, retrained per window ------------------------------
+
+TRAIN_EVERY = pd.Timedelta(hours=6)  # one training decision every 6 h over the train days (ernqi.md task 3)
+
+
+class TempoModel:
+    """LightGBM trained per window on that window's train days only, then used to plan each test day.
+
+    Features come from build_features answered from in-memory frames (tempo/backtest/features.py), so
+    training and test rows obey exactly the point-in-time rules of the live system. Training decisions
+    run every TRAIN_EVERY from train_start, keeping only those whose 48 targets all start before
+    test_start, so no label comes from the test week. Test days are planned like persistence_greedy:
+    one decision per UK day, a minute before its first period (the same prices are known then as at the
+    period start), with the battery's real state of charge carried over.
+
+    The model and test-day forecasts are cached per window, so tempo and tempo_lp share one fit."""
+
+    def __init__(self, frames, **lgbm_params):
+        self.frames = frames
+        self.lgbm_params = lgbm_params
+        self._features: dict[pd.Timestamp, pd.DataFrame | None] = {}
+        self._fits: dict[tuple, object] = {}
+        self._forecasts: dict[tuple, pd.DataFrame | None] = {}
+
+    def features(self, decision_time: pd.Timestamp, horizon: int = PERIODS_PER_DAY) -> pd.DataFrame | None:
+        from tempo.backtest.features import features_at
+
+        key = (decision_time, horizon)
+        if key not in self._features:
+            try:
+                self._features[key] = features_at(self.frames, decision_time, horizon)
+            except ValueError:  # no price in the 8 days before, or no forecast published yet
+                self._features[key] = None
+        return self._features[key]
+
+    def fit(self, train_start: pd.Timestamp, test_start: pd.Timestamp):
+        from tempo.forecast.lgbm import LightGBMQuantileForecaster
+
+        key = (train_start, test_start)
+        if key not in self._fits:
+            X = []
+            T = train_start
+            while T.floor("30min") + PERIODS_PER_DAY * pd.Timedelta(minutes=30) < test_start:
+                f = self.features(T)
+                if f is not None:
+                    X.append(f)
+                T += TRAIN_EVERY
+            model = None
+            if X:
+                X = pd.concat(X)
+                y = self.frames.prices.reindex(X.index)
+                if y.notna().any():
+                    model = LightGBMQuantileForecaster(**self.lgbm_params)
+                    model.fit(X, y)
+            self._fits[key] = model
+        return self._fits[key]
+
+    def forecast(self, key: tuple, day_times: pd.DatetimeIndex) -> pd.DataFrame | None:
+        """p10/p50/p90 for one test day's periods, decided a minute before the first one."""
+        cache = (*key, day_times[0])
+        if cache not in self._forecasts:
+            model = self.fit(*key)
+            horizon = int((day_times[-1] - day_times[0]) / pd.Timedelta(minutes=30)) + 1
+            f = self.features(day_times[0] - pd.Timedelta(minutes=1), horizon)
+            if model is None or f is None:
+                self._forecasts[cache] = None
+            else:
+                self._forecasts[cache] = model.predict(f).reindex(day_times)
+        return self._forecasts[cache]
+
+    def strategy(self, optimiser) -> StrategyFn:
+        def run(train_df: pd.DataFrame, test_df: pd.DataFrame, battery: Battery) -> np.ndarray:
+            key = (train_df.bucket.min(), test_df.bucket.min())
+            schedule = np.zeros(len(test_df))
+            soc = battery.soc_mwh
+            local_day = test_df.bucket.dt.tz_convert(UK).dt.date
+            for day in local_day.unique():
+                rows = np.flatnonzero((local_day == day).to_numpy())
+                day_times = pd.DatetimeIndex(test_df.bucket.iloc[rows])
+                q = self.forecast(key, day_times)
+                if q is None or q.isna().any().any():  # nothing to forecast from: hold all day
+                    continue
+                day_battery = Battery(**{**battery.__dict__, "soc_mwh": soc})
+                mw = optimiser.plan(q, day_battery).mw.to_numpy()
+                schedule[rows] = mw
+                soc = simulate(day_battery, mw, test_df.price.to_numpy()[rows]).soc_path[-1]
+            return schedule
+
+        return run
+
+
+def tempo_strategies(frames, **lgbm_params) -> dict[str, StrategyFn]:
+    """tempo (LightGBM + greedy) and tempo_lp (LightGBM + LP), sharing one model per window."""
+    from tempo.optimise.lp import LPOptimiser
+
+    model = TempoModel(frames, **lgbm_params)
+    return {"tempo": model.strategy(GreedyOptimiser()), "tempo_lp": model.strategy(LPOptimiser())}
 
 
 # --- running and regimes -------------------------------------------------------
@@ -180,14 +280,20 @@ def weekly_regimes(grid: pd.DataFrame, windows) -> dict:
     if not known:
         return {}
     median = np.median(known)
-    return {week: ("windy" if share > median else "calm") for week, share in shares.items() if pd.notna(share)}
+    return {
+        week: ("windy" if share > median else "calm") for week, share in shares.items() if pd.notna(share)
+    }
 
 
-def run_all(prices_hh, grid, windows, run_id, strategies=None, battery=None) -> pd.DataFrame:
+def run_all(prices_hh, grid, windows, run_id, strategies=None, battery=None, frames=None) -> pd.DataFrame:
+    """Every strategy over every window. Passing frames (tempo/backtest/features.py) adds tempo and
+    tempo_lp to the default strategies."""
     windows = list(windows)
     regimes = weekly_regimes(grid, windows) if grid is not None else {}
+    if strategies is None:
+        strategies = {**STRATEGIES, **(tempo_strategies(frames) if frames is not None else {})}
     rows = []
-    for name, fn in (strategies or STRATEGIES).items():
+    for name, fn in strategies.items():
         rows += run_strategy(name, prices_hh, windows, fn, run_id=run_id, battery=battery, regimes=regimes)
     return pd.DataFrame(rows)
 

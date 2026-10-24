@@ -1,6 +1,5 @@
 """Self-grade on synthetic cycles with known timing errors. docs/ernqi.md Phase 3 tests."""
 
-import numpy as np
 import pytest
 
 from tempo.audit.selfgrade import best_shift, grade_cycles, self_grade
@@ -21,7 +20,8 @@ def days():
 
 
 def replay_for(days, late_by: dict[int, int]):
-    """replay(cycle, shift): the cycle's plan, made late_by[cycle] periods late, then shifted, at actual prices."""
+    """replay(cycle, shift): the cycle's plan, made late_by[cycle] periods late, then shifted, at actual
+    prices."""
 
     def replay(cycle, shift):
         prices, plan = days[cycle]

@@ -19,7 +19,7 @@ def rows(strategy, pnls, perfects):
             "pct_of_perfect": 100 * p / q,
             "regime": "calm",
         }
-        for i, (p, q) in enumerate(zip(pnls, perfects))
+        for i, (p, q) in enumerate(zip(pnls, perfects, strict=True))
     ]
 
 

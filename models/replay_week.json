@@ -1,0 +1,10 @@
+{
+  "run_id": "db-20261024T202144Z",
+  "week_start": "2026-06-11",
+  "regime": "windy",
+  "strategy": "tempo",
+  "pct_of_perfect": 62.9,
+  "pnl_gbp": 611.32,
+  "chosen_as": "median windy week for tempo in this run",
+  "rows": 336
+}

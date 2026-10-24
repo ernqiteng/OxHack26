@@ -54,7 +54,8 @@ def simulate(battery: Battery, schedule_mw: np.ndarray, prices: np.ndarray) -> S
     gross = sold = clipped = 0.0
     soc_path = np.empty(len(prices))
 
-    for k, (mw, price) in enumerate(zip(np.clip(schedule_mw, -battery.power_mw, battery.power_mw), prices)):
+    clipped_mw = np.clip(schedule_mw, -battery.power_mw, battery.power_mw)
+    for k, (mw, price) in enumerate(zip(clipped_mw, prices, strict=True)):
         requested = abs(mw) * 0.5
         if mw > 0:
             stored = min(requested * s, cap - soc)

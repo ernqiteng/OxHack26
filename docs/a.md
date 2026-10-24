@@ -64,4 +64,4 @@ Done by Ayo so Part B could proceed in parallel. On main after the next merge.
 - **Nobody creates Tiger services or forks on demo day.** The free tier holds the primary and the audit's fork only (description.md section 11).
 - **Ignore Ayo's rehearsal batch** (`run_id='selftest'`, dated 21 Oct) on Tiger. It is not live data.
 - **Tests:** DB tests need the local Docker DB (`bash scripts/dev_db.sh`). On Windows, a test run hangs rather than skipping if Docker isn't running.
-- **Known failure, owned by Part B:** `tests/unit/test_lp_vs_greedy.py::test_lp_schedule_respects_every_constraint`. Ignore it in Part A.
+- **No known test failures:** the LP failure is fixed (b.md item 1).

@@ -24,8 +24,18 @@ def persistence_frame(days: int = 60) -> pd.DataFrame:
 # hours_since_last_price, daily_spread_lag_1d, lag_missing, fc_missing) need a decision time,
 # which build_features has.
 LGBM_FIXTURE_FEATURES = [
-    "price_lag_1d", "price_lag_7d", "weekly_mean", "weekly_std", "wind_fc", "demand_fc", "wind_share_fc",
-    "hour", "dow", "is_weekend", "period_of_day", "horizon_k",
+    "price_lag_1d",
+    "price_lag_7d",
+    "weekly_mean",
+    "weekly_std",
+    "wind_fc",
+    "demand_fc",
+    "wind_share_fc",
+    "hour",
+    "dow",
+    "is_weekend",
+    "period_of_day",
+    "horizon_k",
 ]
 
 

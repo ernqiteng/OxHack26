@@ -10,7 +10,6 @@ by_regime() and calibration() are the dashboard's regime breakdown and calibrati
 weak_statements() writes the "where it's weak" lines (Phase 3 task 3). All return plain data.
 """
 
-import numpy as np
 import pandas as pd
 
 from tempo.backtest.walkforward import pct_of_perfect
@@ -26,7 +25,8 @@ LABELS = {
 
 
 def summary(results: pd.DataFrame) -> pd.DataFrame:
-    """One row per strategy: label, weeks, pnl_gbp, perfect_pnl_gbp, pct_of_perfect. Takes backtest_results rows."""
+    """One row per strategy: label, weeks, pnl_gbp, perfect_pnl_gbp, pct_of_perfect.
+    Takes backtest_results rows."""
     totals = results.groupby("strategy").agg(
         weeks=("week_start", "nunique"),
         pnl_gbp=("pnl_gbp", "sum"),
@@ -40,7 +40,8 @@ def summary(results: pd.DataFrame) -> pd.DataFrame:
 
 
 def by_regime(results: pd.DataFrame) -> pd.DataFrame:
-    """One row per (strategy, regime): weeks, pnl_gbp, perfect_pnl_gbp, pct_of_perfect. Same maths as summary()."""
+    """One row per (strategy, regime): weeks, pnl_gbp, perfect_pnl_gbp, pct_of_perfect.
+    Same maths as summary()."""
     rows = []
     for (strategy, regime), g in results.dropna(subset=["regime"]).groupby(["strategy", "regime"]):
         pnl, best = g.pnl_gbp.sum(), g.perfect_pnl_gbp.sum()
@@ -66,7 +67,9 @@ def by_regime(results: pd.DataFrame) -> pd.DataFrame:
 
 
 def calibration(forecasts: pd.DataFrame, actuals: pd.DataFrame, bins: int = 10) -> dict:
-    """How honest the forecast bands are. forecasts: target_time, p10, p50, p90. actuals: prices_hh (bucket, price).
+    """How honest the forecast bands are.
+
+    forecasts: target_time, p10, p50, p90. actuals: prices_hh (bucket, price).
 
     Returns
         n                 forecasts with an actual price
@@ -151,7 +154,8 @@ def weak_statements(results: pd.DataFrame, close: float = 0.7, regime_gap_points
             ratio = df[df.strategy == base].pnl_gbp.sum() / main_pnl
             if ratio > 1:
                 lines.append(
-                    f"{name(base)} beats {name(main)} on {scope}: it makes {ratio:.0%} of {name(main)}'s profit."
+                    f"{name(base)} beats {name(main)} on {scope}: "
+                    f"it makes {ratio:.0%} of {name(main)}'s profit."
                 )
             elif ratio >= close:
                 lines.append(f"{name(base)} reaches {ratio:.0%} of {name(main)}'s profit on {scope}.")
@@ -160,7 +164,8 @@ def weak_statements(results: pd.DataFrame, close: float = 0.7, regime_gap_points
     if len(regime_pct) >= 2 and regime_pct.max() - regime_pct.min() >= regime_gap_points:
         hi, lo = regime_pct.idxmax(), regime_pct.idxmin()
         lines.append(
-            f"{name(main)} captures {regime_pct[hi]:.0f}% of perfect on {hi} weeks but only {regime_pct[lo]:.0f}% on {lo} weeks."
+            f"{name(main)} captures {regime_pct[hi]:.0f}% of perfect on {hi} weeks "
+            f"but only {regime_pct[lo]:.0f}% on {lo} weeks."
         )
 
     weeks = results[results.strategy == main]
@@ -168,6 +173,7 @@ def weak_statements(results: pd.DataFrame, close: float = 0.7, regime_gap_points
         worst = weeks.loc[weeks.pct_of_perfect.idxmin()]
         regime = f" ({worst.regime})" if isinstance(worst.regime, str) else ""
         lines.append(
-            f"Weakest week for {name(main)}: week of {worst.week_start}{regime}, {worst.pct_of_perfect:.0f}% of perfect."
+            f"Weakest week for {name(main)}: week of {worst.week_start}{regime}, "
+            f"{worst.pct_of_perfect:.0f}% of perfect."
         )
     return lines
