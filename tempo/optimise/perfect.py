@@ -39,7 +39,10 @@ def perfect_foresight(prices, battery: Battery) -> pd.DataFrame:
     )
 
 
-def _solve(p: np.ndarray, battery: Battery, exclusive: bool) -> tuple[np.ndarray, np.ndarray]:
+def _solve(p: np.ndarray, battery: Battery, exclusive: bool, sell: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Charge c and discharge d in MW. Buys are priced at p, sells at `sell` (default p); LPOptimiser's
+    conservative variant passes p90 as p and p10 as sell."""
+    sell = p if sell is None else sell
     n, s, power = len(p), sqrt(battery.rt_efficiency), battery.power_mw
     c, d, soc = cp.Variable(n, nonneg=True), cp.Variable(n, nonneg=True), cp.Variable(n + 1)
     constraints = [
@@ -54,7 +57,7 @@ def _solve(p: np.ndarray, battery: Battery, exclusive: bool) -> tuple[np.ndarray
     else:
         constraints += [c <= power, d <= power]
     wear = battery.cycle_cost_gbp / battery.capacity_mwh
-    objective = cp.Maximize(0.5 * (p @ (d - c)) - 0.5 * wear * cp.sum(d))
+    objective = cp.Maximize(0.5 * (sell @ d - p @ c) - 0.5 * wear * cp.sum(d))
     problem = cp.Problem(objective, constraints)
     problem.solve(solver="HIGHS")
     if problem.status != cp.OPTIMAL:
