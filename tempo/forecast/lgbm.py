@@ -18,26 +18,11 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 
+from tempo.features.build import FEATURE_COLUMNS
+
 QUANTILES = {"p10": 0.1, "p50": 0.5, "p90": 0.9}
 
-FEATURES = [
-    "price_lag_1d",
-    "price_lag_7d",
-    "price_last_known",
-    "hours_since_last_price",
-    "lag_missing",
-    "daily_spread_lag_1d",
-    "weekly_mean",
-    "weekly_std",
-    "wind_fc",
-    "demand_fc",
-    "wind_share_fc",
-    "hour",
-    "dow",
-    "is_weekend",
-    "period_of_day",
-    "horizon_k",
-]
+FEATURES = [*FEATURE_COLUMNS, "horizon_k"]  # horizon_k is added by make_training_set / run_decision
 
 PARAMS = {
     "n_estimators": 300,
