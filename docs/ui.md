@@ -1,5 +1,8 @@
 # Tempo UI plan
 
+> **Theme superseded.** The visual system in section 3 (dark, Linear-style) is replaced by the Toven-style
+> paper theme in [ui-plan.md](ui-plan.md). Sections 4 to 8 (screens, components, build order, rules) still apply.
+
 Owner: Ayo. Companion to [ayo.md](ayo.md) (phases) and [description.md](description.md) (demo script).
 This is the design spec for `tempo/dashboard/`. It is written so any of us can pick up a screen and build it
 without re-deciding anything.
