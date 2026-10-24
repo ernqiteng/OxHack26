@@ -218,5 +218,9 @@ MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
    - **Battery:** 2 MWh, 1 MW, 90% round-trip (split as √0.9 each way), £20 per full cycle, start at 1 MWh (50% SoC).
    - **Vultr region:** workers in `ewr` (New Jersey, next to Tiger `us-east-1`), dashboard backend in `lhr` (London).
    - All match `.env.example`, `docs/plan.md` (`Battery`) and `docs/description.md`.
-5. [ ] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date).
+5. [x] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date). **Checked 2026-10-24** against real MID for the last clock change (26 Oct 2025), saved as `tests/fixtures/elexon_samples/mid_2025-10-26_clock_change.json`: 50 rows, 50 distinct `startTime`, SP 1 to 50, no collisions. The design handles it (schema keys on UTC `start_time`, girik.md says never derive `start_time` from SP). Ingest code is still a stub, so `tests/unit/test_clock_change.py` (girik.md) must run against this fixture once `normalise` exists. Rules for everyone:
+   - **Never compute a settlement period from the UTC clock.** It mismatched all 50 rows that day, and is off by 2 every day in BST. SP = half-hours since UK local midnight + 1. Fixed in ayo.md (dashboard Live tab).
+   - **Horizons are 48 half-hours from now, not "one settlement day".** A clock-change day has 46 or 50 periods.
+   - **`ZoneInfo("Europe/London")` fails on Windows without the `tzdata` package.** Added to `pyproject.toml`.
+   - **Say which clock local-time rules use.** `simple_rule` (charge 01:00 to 05:00, discharge 17:00 to 19:00) and features like `hour` / `period_of_day` should use UK local time, or state UTC explicitly.
 6. [ ] Put `.env.example` in the repo with every variable from B6.
