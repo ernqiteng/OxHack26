@@ -20,7 +20,13 @@ import streamlit as st
 from tempo.config import settings
 from tempo.dashboard import jobs, ui
 from tempo.dashboard import theme as T
-from tempo.dashboard.data import SHIFTS, current_settlement_period, pick_source
+from tempo.dashboard.data import (
+    HEADLINE_STRATEGY,
+    SHIFTS,
+    STRATEGY_LABELS,
+    current_settlement_period,
+    pick_source,
+)
 
 st.set_page_config(page_title="Tempo", page_icon="⚡", layout="wide")
 
@@ -68,6 +74,9 @@ def main_strategy_row(summary: pd.DataFrame):
     rows = summary[~summary.strategy.str.lower().str.startswith("perfect")]
     if rows.empty:
         return None
+    live = rows[rows.strategy == STRATEGY_LABELS[HEADLINE_STRATEGY]]
+    if not live.empty:
+        return live.iloc[0]
     tempo = rows[rows.strategy.str.lower().str.startswith("tempo")]
     return (tempo if not tempo.empty else rows.sort_values("pct_of_perfect")).iloc[-1]
 

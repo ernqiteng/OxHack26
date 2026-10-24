@@ -24,13 +24,15 @@ import pandas as pd
 LONDON = ZoneInfo("Europe/London")
 REPLAY_WEEK_PATH = Path(__file__).resolve().parents[2] / "models" / "replay_week.parquet"
 SHIFTS = (-2, -1, 0, 1, 2)
-STRATEGIES = ("simple_rule", "persistence_greedy", "tempo", "perfect")
+STRATEGIES = ("simple_rule", "persistence_greedy", "tempo", "tempo_lp", "perfect")
 STRATEGY_LABELS = {
     "simple_rule": "Simple rule (charge 01:00-05:00, sell 17:00-19:00)",
     "persistence_greedy": "Persistence forecast + same optimiser",
     "tempo": "Tempo (LightGBM forecast + same optimiser)",
+    "tempo_lp": "Tempo LP (LightGBM forecast + LP optimiser)",
     "perfect": "Perfect knowledge of the future",
 }
+HEADLINE_STRATEGY = "tempo"  # what the live engine runs (scripts/decide.py defaults to greedy)
 
 
 def utc_now() -> datetime:
@@ -244,7 +246,13 @@ class SyntheticSource:
     # Honesty tab ------------------------------------------------------------------------------
     def backtest_summary(self) -> pd.DataFrame:
         perfect = 4120.0
-        totals = {"simple_rule": 1980.0, "persistence_greedy": 2410.0, "tempo": 2890.0, "perfect": perfect}
+        totals = {
+            "simple_rule": 1980.0,
+            "persistence_greedy": 2410.0,
+            "tempo": 2890.0,
+            "tempo_lp": 2960.0,
+            "perfect": perfect,
+        }
         return pd.DataFrame(
             {
                 "strategy": [STRATEGY_LABELS[s] for s in STRATEGIES],
@@ -259,7 +267,7 @@ class SyntheticSource:
     def backtest_by_regime(self) -> pd.DataFrame:
         rows = []
         for regime, scale in (("calm", 0.6), ("windy", 1.4)):
-            for s, pct in zip(STRATEGIES, (48, 58, 70, 100), strict=True):
+            for s, pct in zip(STRATEGIES, (48, 58, 70, 72, 100), strict=True):
                 rows.append(
                     {
                         "regime": regime,
