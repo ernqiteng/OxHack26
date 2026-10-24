@@ -88,7 +88,9 @@ class GreedyOptimiser:
                 spread[k], reason[k] = self._hold_reason(k, p, stored, drawn, soc_after, battery, times)
 
         action = np.where(mw > 0, "charge", np.where(mw < 0, "discharge", "hold"))
-        return pd.DataFrame({"action": action, "mw": mw, "expected_spread": spread, "reason": reason}, index=times)
+        return pd.DataFrame(
+            {"action": action, "mw": mw, "expected_spread": spread, "reason": reason}, index=times
+        )
 
     @staticmethod
     def _trade_reason(k, i, j, p, battery, times, wear):
@@ -103,7 +105,9 @@ class GreedyOptimiser:
     def _hold_reason(k, p, stored, drawn, soc_after, battery, times):
         """Best partner for period k, as a buy or as a sell, and why no energy moved."""
         n = len(p)
-        candidates = [(k, j) for j in range(k + 1, n) if stored[j] == 0] + [(i, k) for i in range(k) if drawn[i] == 0]
+        candidates = [(k, j) for j in range(k + 1, n) if stored[j] == 0] + [
+            (i, k) for i in range(k) if drawn[i] == 0
+        ]
         if not candidates:
             return np.nan, "hold: no other free period in the horizon to pair with"
         i, j = max(candidates, key=lambda ij: battery.rt_efficiency * p[ij[1]] - p[ij[0]])

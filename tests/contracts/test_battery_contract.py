@@ -10,7 +10,13 @@ from tempo.sim.battery import Battery, SimResult, simulate
 
 def test_battery_defaults():
     b = Battery()
-    assert (b.capacity_mwh, b.power_mw, b.rt_efficiency, b.cycle_cost_gbp, b.soc_mwh) == (2.0, 1.0, 0.90, 20.0, 1.0)
+    assert (b.capacity_mwh, b.power_mw, b.rt_efficiency, b.cycle_cost_gbp, b.soc_mwh) == (
+        2.0,
+        1.0,
+        0.90,
+        20.0,
+        1.0,
+    )
 
 
 def test_simulate_signature():

@@ -207,7 +207,7 @@ Take Tiger Data away and both the feature pipeline and the signature mechanic go
 
 - **Parallel replay workers** for the timing audit, provisioned via the Vultr API. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
 - **Parallel walk-forward backtests**, with a reported speed-up over running them in sequence.
-- **Model training**, on GPU if the neural net earns its place. If it doesn't, we report the CPU vs GPU comparison honestly.
+- **Model training** on CPU workers. GPU plans are not available to this account (every Vultr GPU plan reports no locations, checked via the API), so the neural net, if it earns its place, trains on CPU and we say so.
 - **Battery-size sweep** (stretch): re-running the backtest across different battery capacities is a naturally parallel workload.
 - **Backend and dashboard hosting**, the least interesting part.
 
@@ -247,7 +247,7 @@ Cut from the bottom if time runs out.
 ### Nice-to-have (cut first)
 
 7. `cvxpy` LP optimiser (greedy is an acceptable fallback).
-8. Neural net vs LightGBM comparison on Vultr GPU.
+8. Neural net vs LightGBM comparison, trained on a Vultr CPU worker (no GPU on this account).
 9. Battery-size sweep and regime breakdown.
 10. pgvector "similar days" lookup, finding historical days whose shape matches today's forecast.
 
@@ -259,7 +259,7 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 
 | Gate | Done when | Decisions made here |
 |---|---|---|
-| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU available or not. Vultr instance limit checked. Who owns what. |
+| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU: checked, not available on this account, CPU only. Vultr instance limit checked. Who owns what. |
 | **Gate 1: Data** | History loaded, live polling running, aggregates building | Confirm availability-time stamping on every row |
 | **Gate 2: Baseline demo** | Backtest table with simple rule, greedy + persistence, perfect foresight | Lookahead sanity check: only perfect foresight should "know" the future |
 | **Gate 3: Tempo decides** | LightGBM forecast feeding the cost gate, Tempo row in the table | |
@@ -281,7 +281,7 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 | Forks too slow on the day | Primary database is a free service (forks ready in 36 to 42 s in testing). If still slow, pre-create the fork before the demo and have the click dispatch workers into it, or switch the toggle to in-process ("same replay, run locally") |
 | Tiger free tier allows only 2 services | Audit uses one fork per click (section 11). Nobody creates other forks on demo day; `demo_reset.py` checks only the primary exists. The audit button is disabled while an audit runs |
 | Unfamiliar domain for judges | Open with the buy-low-sell-high line |
-| Vultr GPU not available | Train on CPU, lean on parallel workers as the Vultr story |
+| Vultr GPU not available (confirmed: no GPU plan has any location for this account) | Train on CPU, lean on parallel workers as the Vultr story, never say "GPU" on stage |
 
 ---
 

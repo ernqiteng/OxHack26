@@ -44,7 +44,9 @@ def simulate(battery: Battery, schedule_mw: np.ndarray, prices: np.ndarray) -> S
     schedule_mw = np.asarray(schedule_mw, dtype=float)
     prices = np.asarray(prices, dtype=float)
     if schedule_mw.shape != prices.shape or schedule_mw.ndim != 1:
-        raise ValueError(f"schedule_mw {schedule_mw.shape} and prices {prices.shape} must be equal-length 1-D")
+        raise ValueError(
+            f"schedule_mw {schedule_mw.shape} and prices {prices.shape} must be equal-length 1-D"
+        )
 
     s = sqrt(battery.rt_efficiency)
     cap = battery.capacity_mwh
