@@ -121,7 +121,7 @@ Quirks to code around:
 ### B4. Vultr: decisions and unknowns to resolve at Gate 0
 
 - [ ] **Account limits.** Vultr caps the number of instances and spend on new accounts, raised only via a limit-increase request that support reviews manually. Check Billing → Limits on day one. You need at least **5 worker instances + 1 backend** running at once. Request an increase immediately if the cap is lower.
-- [ ] **Region.** Pick one close to the Tiger service (`us-east-1` for a free service → Vultr New Jersey `ewr`) to keep fork-to-worker latency low. The venue is in Oxford, so the dashboard backend is better in London (`lhr`); workers can be in `ewr`.
+- [x] **Region.** Decided: workers `ewr`, backend `lhr` (B8 item 4). Pick one close to the Tiger service (`us-east-1` for a free service → Vultr New Jersey `ewr`) to keep fork-to-worker latency low. The venue is in Oxford, so the dashboard backend is better in London (`lhr`); workers can be in `ewr`.
 - [ ] **GPU availability** (**unverified**): list plans with `GET /v2/plans?type=vcg` (GPU plans) and check `locations`. New accounts may have no GPU quota. Decide CPU-vs-GPU training here, per the risk table.
 - [ ] **Pre-warm pool.** Instance boot plus cloud-init is typically 1 to 3 minutes, far too slow to create on click. Create the 5 workers before the demo, keep them running, and have the click trigger a *job* via the API (or a tiny HTTP call to each worker) rather than instance creation. Still show the real Vultr API being called (for example `GET /v2/instances` to pick an idle worker, or a snapshot-based create that was started earlier).
 - [ ] **Worker image.** Build one worker, snapshot it (`POST /v2/snapshots` with `instance_id`), and create the pool from the snapshot with `snapshot_id` plus `user_data` (base64 cloud-init) that injects the Tiger credentials.
@@ -212,6 +212,11 @@ MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
 1. [x] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it. Cap 750 MiB (339 MB used empty, see B2). Forks: 34.8s `NOW`, 25.9s `LAST_SNAPSHOT`.
 2. [ ] Vultr: create API key, check account instance limit, list GPU plans, deploy one tiny instance and time boot-to-ready.
 3. [x] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3. **Done 2026-10-24, shapes match.** Both return a bare JSON list (no `data` wrapper), newest first. MID 1 year APX: 17,521 rows, 2.8 MB, 6.9s. NDF 1 week: 19,768 rows, 3.4 MB, 8.7s, 334 publishes (every ~30 min), all `boundary: "N"`. Extrapolates to ~2.1M rows / ~350 MB JSON for 2 years, matching B3.
-4. [ ] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region.
+4. [x] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region. **Decided 2026-10-24:**
+   - **Price:** APX MID (`dataProviders=APXMIDP`), dropping `volume == 0` rows.
+   - **δ = 10 min**, so `available_at = startTime + 40 min`. Shown in the honesty panel as an assumption.
+   - **Battery:** 2 MWh, 1 MW, 90% round-trip (split as √0.9 each way), £20 per full cycle, start at 1 MWh (50% SoC).
+   - **Vultr region:** workers in `ewr` (New Jersey, next to Tiger `us-east-1`), dashboard backend in `lhr` (London).
+   - All match `.env.example`, `docs/plan.md` (`Battery`) and `docs/description.md`.
 5. [ ] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date).
 6. [ ] Put `.env.example` in the repo with every variable from B6.
