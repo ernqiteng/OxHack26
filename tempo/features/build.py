@@ -255,8 +255,8 @@ def build_features(conn: psycopg.Connection, decision_time: datetime, horizon: i
     local = targets.tz_convert(LONDON)
     midnight = local.normalize()
     out["hour"] = local.hour
-    out["dow"] = local.dayofweek
-    out["is_weekend"] = (local.dayofweek >= 5).astype(float)
+    out["dow"] = local.day_of_week
+    out["is_weekend"] = (local.day_of_week >= 5).astype(float)
     out["period_of_day"] = ((local - midnight) / pd.Timedelta(minutes=30)).astype(int) + 1  # SP, 1..50
 
     out["lag_missing"] = lag_missing
