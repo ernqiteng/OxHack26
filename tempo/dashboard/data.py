@@ -430,12 +430,24 @@ class DbSource:
         return pd.DataFrame([{**r.__dict__} for r in rows])
 
     def self_grade(self) -> dict:
+        """Ernqi's self_grade returns pct_within_one_period as a 0..1 fraction and None when no cycle has
+        completed; the dashboard shows a percentage, so convert here and treat "no cycles" as not ready."""
+
         def fetch():
             from tempo.audit.selfgrade import self_grade
 
-            return self_grade(self.conn, since=utc_now() - timedelta(days=30))
+            sg = self_grade(self.conn, since=utc_now() - timedelta(days=30))
+            if not sg.get("n_cycles") or sg.get("pct_within_one_period") is None:
+                return None
+            return {
+                "pct_within_one_period": 100.0 * float(sg["pct_within_one_period"]),
+                "n_cycles": int(sg["n_cycles"]),
+                "mean_cost_of_mistiming_gbp": float(sg.get("mean_cost_of_mistiming_gbp") or 0.0),
+            }
 
-        return self._try("self_grade", fetch, self.fallback.self_grade)
+        return self._try(
+            "self_grade", fetch, self.fallback.self_grade, empty_note="no completed live cycles to grade yet"
+        )
 
     # -- Honesty tab ------------------------------------------------------------------------------
     _LATEST_RUN = "(SELECT max(run_id) FROM backtest_results)"
@@ -485,7 +497,20 @@ class DbSource:
         return self._try("storage_stats", fetch, self.fallback.storage_stats)
 
     def weak_points(self) -> list[str]:
-        return self.fallback.weak_points()
+        """Ernqi's weak_statements() over the latest backtest run; canned sentences until rows exist."""
+
+        def fetch():
+            from tempo.backtest.metrics import weak_statements
+
+            rows = self._cached(
+                ("bt_rows",),
+                lambda: self._df(f"SELECT * FROM backtest_results WHERE run_id = {self._LATEST_RUN}"),
+            )
+            return (weak_statements(rows) if not rows.empty else []) or None
+
+        return self._try(
+            "weak_points", fetch, self.fallback.weak_points, empty_note="no backtest rows for weak statements"
+        )
 
 
 def pick_source(

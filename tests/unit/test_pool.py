@@ -132,3 +132,14 @@ def test_pool_sends_the_worker_token():
     pool = LocalWorkerPool(1, app=app, token="t0k")
     run_all(pool, [0])
     assert seen == ["Bearer t0k"]
+
+
+def test_local_pool_sends_token_from_env(monkeypatch):
+    """With TEMPO_WORKER_TOKEN in .env the in-process worker demands it; the local pool must send it."""
+    from tempo.worker.main import app as worker_app
+
+    monkeypatch.setenv("TEMPO_WORKER_TOKEN", "env-token")
+    pool = LocalWorkerPool(1, app=worker_app)
+    result = run_all(pool, [0])[0]
+    assert isinstance(result, WorkerError) and "cannot connect" in str(result)  # past auth, fails on DSN
+    assert pool.headers == {"Authorization": "Bearer env-token"}

@@ -2,11 +2,19 @@
 
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tempo.worker.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _no_token(monkeypatch):
+    """.env may carry a real TEMPO_WORKER_TOKEN (scripts/build_worker_image.py writes one); these tests
+    exercise the unauthenticated worker unless they set a token themselves."""
+    monkeypatch.delenv("TEMPO_WORKER_TOKEN", raising=False)
 
 
 def test_health(monkeypatch):

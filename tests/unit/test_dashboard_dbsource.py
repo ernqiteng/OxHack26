@@ -74,3 +74,44 @@ def test_try_treats_empty_as_missing(value):
     src = data.DbSource(BrokenConn())
     out = src._try("x", lambda: value, lambda: "fallback")
     assert out == "fallback" and "no rows yet" in src.notes["x"]
+
+
+def test_self_grade_converts_ernqi_fraction_to_percent(monkeypatch):
+    import tempo.audit.selfgrade as sg
+
+    monkeypatch.setattr(
+        sg,
+        "self_grade",
+        lambda conn, since: {
+            "pct_within_one_period": 0.71,
+            "n_cycles": 38,
+            "mean_cost_of_mistiming_gbp": 9.4,
+        },
+    )
+    src = data.DbSource(BrokenConn())
+    out = src.self_grade()
+    assert out == {"pct_within_one_period": 71.0, "n_cycles": 38, "mean_cost_of_mistiming_gbp": 9.4}
+    assert "self_grade" not in src.notes
+
+
+def test_self_grade_with_no_cycles_falls_back_with_note(monkeypatch):
+    import tempo.audit.selfgrade as sg
+
+    monkeypatch.setattr(
+        sg,
+        "self_grade",
+        lambda conn, since: {
+            "pct_within_one_period": None,
+            "n_cycles": 0,
+            "mean_cost_of_mistiming_gbp": None,
+        },
+    )
+    src = data.DbSource(BrokenConn())
+    out = src.self_grade()
+    assert out["pct_within_one_period"] == 71.0  # synthetic stand-in
+    assert "no completed live cycles" in src.notes["self_grade"]
+
+
+def test_weak_points_fall_back_without_backtest_rows():
+    src = data.DbSource(BrokenConn())
+    assert len(src.weak_points()) >= 3 and "weak_points" in src.notes

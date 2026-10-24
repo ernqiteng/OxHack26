@@ -7,7 +7,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from tempo.audit.preflight import FAIL, OK, WARN, run_preflight
+from tempo.audit.refsim import resolve_sim
 from tempo.infra.tiger import Service
+
+LOCAL_SIM = resolve_sim()[1]
 
 NOW = datetime(2026, 10, 25, 12, 0, tzinfo=UTC)
 PRIMARY = "prim"
@@ -37,7 +40,7 @@ class FakePool:
         return self._health
 
 
-def healthy(n=5, sim="reference (tempo.audit.refsim)", prefix="tempo-worker"):
+def healthy(n=5, sim=LOCAL_SIM, prefix="tempo-worker"):
     body = json.dumps({"ok": True, "simulator": sim})
     return {f"{prefix}-{k}": (True, body) for k in range(1, n + 1)}
 
@@ -168,7 +171,7 @@ def test_too_few_vultr_workers_warn():
 
 
 def test_simulator_mismatch_warns():
-    r = run(pool=FakePool(healthy(sim="tempo.sim.battery")))
+    r = run(pool=FakePool(healthy(sim="some-other-simulator")))
     assert levels(r)["simulator"] == WARN
 
 

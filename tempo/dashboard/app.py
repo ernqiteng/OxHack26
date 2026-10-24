@@ -235,11 +235,12 @@ def tab_honesty(src) -> None:
     st.markdown("**Where it's weak**")
     for line_ in src.weak_points():
         st.markdown(f"- {line_}")
+    show_notes(src, "weak_points")
     stats = src.storage_stats()
+    before, after = stats.get("before_bytes") or 0, stats.get("after_bytes") or 0
+    saved = 100 * (1 - after / before) if before else 0.0
     st.caption(
-        f"Storage: {stats['rows']:,} rows in grid_raw, "
-        f"compressed {100 * (1 - stats['after_bytes'] / stats['before_bytes']):.0f}% "
-        f"({stats['ratio']:.1f}×)."
+        f"Storage: {stats['rows']:,} rows in grid_raw, compressed {saved:.0f}% ({stats['ratio']:.1f}×)."
     )
     show_notes(src, "backtest_summary", "backtest_by_regime", "calibration", "storage_stats")
 
