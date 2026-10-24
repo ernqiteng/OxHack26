@@ -1,14 +1,17 @@
-"""Walk-forward backtest: simple rule, persistence + greedy, perfect. Prints the honesty table.
+"""Walk-forward backtest of every strategy, tempo and tempo_lp included. Prints the honesty table.
 
 Owner: Ernqi. See docs/ernqi.md Phase 1 task 7.
 
     python scripts/backtest.py                      # Tiger prices_hh if it has data, else synthetic
     python scripts/backtest.py --source synthetic   # 60-day synthetic market (tests/fixtures/synthetic.py)
     python scripts/backtest.py --source db --write  # also insert rows into backtest_results
+    python scripts/backtest.py --no-tempo           # skip tempo / tempo_lp (minutes faster)
 
 Reads TEMPO_DATABASE_URL from .env. --write needs a run_id not used before ((run_id, week_start, strategy)
 is the primary key); the default run_id includes the time, so plain re-runs never collide.
 Synthetic results are never written: they would sit in the shared table next to real ones.
+tempo and tempo_lp retrain LightGBM per window on its train days, with features from build_features
+answered in memory (tempo/backtest/features.py): every WINDFOR/NDF publication is loaded once.
 """
 
 import argparse
@@ -37,30 +40,21 @@ def connect():
 
 
 def load_db(conn):
-    with conn.cursor() as cur:
-        cur.execute("SELECT bucket, price FROM prices_hh WHERE price IS NOT NULL ORDER BY bucket")
-        prices_hh = pd.DataFrame(cur.fetchall(), columns=["bucket", "price"])
-        cur.execute(
-            """SELECT DISTINCT ON (dataset, start_time) start_time, available_at, dataset, value
-               FROM grid_raw WHERE dataset IN ('WINDFOR', 'NDF')
-               ORDER BY dataset, start_time, available_at DESC"""
-        )
-        grid = pd.DataFrame(cur.fetchall(), columns=["start_time", "available_at", "dataset", "value"])
-    if len(prices_hh):
-        prices_hh["bucket"] = pd.to_datetime(prices_hh.bucket, utc=True)
-        prices_hh["price"] = prices_hh.price.astype(float)
-    if len(grid):
-        grid["start_time"] = pd.to_datetime(grid.start_time, utc=True)
-        grid["available_at"] = pd.to_datetime(grid.available_at, utc=True)
-        grid["value"] = grid.value.astype(float)
-    return prices_hh, (grid if "WINDFOR" in set(grid.dataset) else None)
+    """prices_hh, the WINDFOR/NDF publications (regimes), and the frames tempo's features are built from."""
+    from tempo.backtest.features import load_frames
+
+    frames = load_frames(conn)
+    prices_hh = pd.DataFrame({"bucket": frames.prices.index, "price": frames.prices.to_numpy()})
+    grid = frames.forecasts
+    return prices_hh, (grid if "WINDFOR" in set(grid.dataset) else None), frames
 
 
 def load_synthetic():
+    from tempo.backtest.features import frames_from_grid
     from tests.fixtures.synthetic import make_synthetic_market
 
     grid = make_synthetic_market()
-    return prices_hh_from_grid_raw(grid), grid
+    return prices_hh_from_grid_raw(grid), grid, frames_from_grid(grid)
 
 
 def main(argv=None):
@@ -70,13 +64,14 @@ def main(argv=None):
     ap.add_argument("--train-days", type=int, default=28)
     ap.add_argument("--test-days", type=int, default=7)
     ap.add_argument("--write", action="store_true", help="insert rows into backtest_results (db source only)")
+    ap.add_argument("--no-tempo", action="store_true", help="skip tempo / tempo_lp (no LightGBM training)")
     args = ap.parse_args(argv)
 
     source, conn = args.source, None
     if source in ("auto", "db"):
         try:
             conn = connect()
-            prices_hh, grid = load_db(conn)
+            prices_hh, grid, frames = load_db(conn)
         except Exception as exc:  # noqa: BLE001
             if source == "db":
                 raise SystemExit(f"could not read prices_hh: {exc}") from exc
@@ -88,7 +83,7 @@ def main(argv=None):
         if source == "synthetic" and args.source == "auto":
             print("prices_hh is empty, using the synthetic market")
     if source == "synthetic":
-        prices_hh, grid = load_synthetic()
+        prices_hh, grid, frames = load_synthetic()
     if args.write and source != "db":
         raise SystemExit("--write only works with real data (--source db)")
 
@@ -104,7 +99,7 @@ def main(argv=None):
         f"{source}: {len(prices_hh)} half-hours, {start.date()} to {end.date()}, {len(windows)} test weeks, run_id {run_id}"
     )
 
-    results = run_all(prices_hh, grid, windows, run_id)
+    results = run_all(prices_hh, grid, windows, run_id, frames=None if args.no_tempo else frames)
     weekly = results.pivot(index=["week_start", "regime"], columns="strategy", values="pct_of_perfect")
     print("\n% of perfect by week\n" + weekly.round(1).to_string())
     table = summary(results)
