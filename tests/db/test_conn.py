@@ -63,6 +63,14 @@ def test_upsert_keeps_new_publication_of_same_period(conn):
     assert _count(conn) == 20
 
 
+def test_upsert_empty_frame_is_a_noop(conn):
+    from tempo.ingest.elexon import normalise
+
+    assert upsert_grid_raw(conn, normalise("MID", [])) == 0  # empty window from the API
+    assert upsert_grid_raw(conn, _frame(0)) == 0
+    assert _count(conn) == 0
+
+
 def test_upsert_rejects_naive_timestamps(conn):
     df = _frame(5)
     df["start_time"] = df["start_time"].dt.tz_localize(None)

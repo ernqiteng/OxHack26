@@ -38,10 +38,10 @@ def test_hypertables(schema_conn):
     assert {r[0] for r in rows} == HYPERTABLES
 
 
-def test_backtest_results_is_plain_table(schema_conn):
+@pytest.mark.parametrize("table", ["backtest_results", "ingest_log"])
+def test_plain_tables(schema_conn, table):
     rows = run_sql(
-        schema_conn,
-        "SELECT table_type FROM information_schema.tables WHERE table_name = 'backtest_results'",
+        schema_conn, "SELECT table_type FROM information_schema.tables WHERE table_name = %s", (table,)
     )
     assert rows == [("BASE TABLE",)]
 
@@ -74,6 +74,29 @@ def test_refresh_policies(schema_conn):
         "WHERE proc_name = 'policy_refresh_continuous_aggregate'",
     )
     assert len(rows) == 3
+
+
+def test_grid_raw_compression_enabled_with_policy(schema_conn):
+    rows = run_sql(
+        schema_conn,
+        "SELECT compression_enabled FROM timescaledb_information.hypertables "
+        "WHERE hypertable_name = 'grid_raw'",
+    )
+    assert rows == [(True,)]
+    jobs = run_sql(
+        schema_conn,
+        "SELECT hypertable_name FROM timescaledb_information.jobs WHERE proc_name = 'policy_compression'",
+    )
+    assert jobs == [("grid_raw",)]
+    settings = run_sql(
+        schema_conn,
+        "SELECT segmentby, orderby FROM timescaledb_information.hypertable_compression_settings "
+        "WHERE hypertable = 'grid_raw'::regclass",
+    )
+    # TimescaleDB stores the lists without spaces
+    assert [(s.replace(" ", ""), o.replace(" ", "")) for s, o in settings] == [
+        ("dataset,series", "start_time,available_at")
+    ]
 
 
 def _refresh_all(conn, start, end):

@@ -97,6 +97,8 @@ def grid_raw_rows(df: pd.DataFrame) -> list[tuple]:
     missing = [c for c in GRID_RAW_REQUIRED if c not in df.columns]
     if missing:
         raise ValueError(f"grid_raw frame missing columns: {missing}")
+    if df.empty:
+        return []  # an empty normalise() result has object-typed columns; nothing to validate or insert
     out = pd.DataFrame(index=df.index)
     out["start_time"] = _to_utc(df["start_time"], "start_time")
     out["available_at"] = _to_utc(df["available_at"], "available_at")
@@ -143,6 +145,18 @@ def upsert_grid_raw(conn: psycopg.Connection, df: pd.DataFrame) -> int:
             f"INSERT INTO grid_raw ({cols}) SELECT {cols} FROM _grid_raw_stage ON CONFLICT DO NOTHING"
         )
         return cur.rowcount
+
+
+CAGGS = ("prices_hh", "prices_daily", "prices_weekly")
+
+
+def refresh_caggs(conn: psycopg.Connection, start, end, views: Sequence[str] = CAGGS) -> None:
+    """Refresh the price aggregates over [start, end), parents first so children see fresh data.
+
+    Must run outside a transaction block (autocommit), which get_conn() gives by default.
+    """
+    for view in views:
+        conn.execute("CALL refresh_continuous_aggregate(%s, %s, %s)", (view, start, end))
 
 
 def _check(conn: psycopg.Connection) -> None:

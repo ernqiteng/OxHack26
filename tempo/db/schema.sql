@@ -76,7 +76,28 @@ SELECT add_continuous_aggregate_policy('prices_weekly',
   start_offset => INTERVAL '3 weeks', end_offset => INTERVAL '1 hour',
   schedule_interval => INTERVAL '1 hour', if_not_exists => TRUE);
 
--- TODO (Girik, Phase 3): compression policy on grid_raw chunks older than 7 days
+-- Columnstore compression on grid_raw, enabled BEFORE the backfill (moved from Phase 3): uncompressed,
+-- 2 years is ~1.2 GB at ~350 B/row, compressed ~120-250 MB, and the Tiger free service has ~390 MiB free.
+-- segmentby dataset,series: each series compresses as its own run; a backfill of a new dataset into an
+-- already-compressed chunk touches no existing segment. orderby start_time,available_at matches the PK.
+ALTER TABLE grid_raw SET (
+  timescaledb.compress,
+  timescaledb.compress_segmentby = 'dataset, series',
+  timescaledb.compress_orderby   = 'start_time, available_at'
+);
+SELECT add_compression_policy('grid_raw', INTERVAL '7 days', if_not_exists => TRUE);
+
+-- Backfill bookkeeping: one row per fetched window, written in the same transaction as its upsert.
+-- Resume checks this table, never grid_raw: inferring coverage from rows is wrong for spill-over,
+-- sparse datasets and short windows (the first 2-year run silently loaded half of MID that way).
+CREATE TABLE IF NOT EXISTS ingest_log (
+  dataset      text        NOT NULL,
+  window_start timestamptz NOT NULL,
+  window_end   timestamptz NOT NULL,
+  rows         integer     NOT NULL,
+  fetched_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (dataset, window_start, window_end)
+);
 
 -- ---------------------------------------------------------------------------
 -- Forecasts and decisions
