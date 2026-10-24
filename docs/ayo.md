@@ -122,8 +122,7 @@ Full demo path rehearsed twice from `demo_reset.py` to the closing line. Backup 
 
 ## Phase 4: Stretch (only if everything above is green)
 
-- Parallel walk-forward backtest on the worker pool (`POST /backtest_window`) with a reported speed-up versus serial; test: results identical to the serial run.
-- Battery-size sweep dispatched to the pool, same equivalence test.
+- Not built: the parallel walk-forward backtest on the worker pool and the battery-size sweep. Plan and blockers in [time.md](time.md).
 
 ---
 

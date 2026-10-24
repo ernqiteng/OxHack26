@@ -207,9 +207,8 @@ Take Tiger Data away and both the feature pipeline and the signature mechanic go
 ### Vultr
 
 - **Parallel replay workers** for the timing audit, provisioned via the Vultr API. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
-- **Parallel walk-forward backtests**, with a reported speed-up over running them in sequence.
 - **Model training** on CPU. GPU plans are not available to this account (every Vultr GPU plan reports no locations, checked via the API), and LightGBM on tabular features does not need one.
-- **Battery-size sweep** (stretch): re-running the backtest across different battery capacities is a naturally parallel workload.
+- **If time allows, not built:** parallel walk-forward backtests on the workers with a measured speed-up, and a battery-size sweep. See [time.md](time.md).
 - **Backend and dashboard hosting**, the least interesting part.
 
 The timing audit doesn't happen without Vultr compute provisioned on demand.
@@ -315,7 +314,7 @@ What sets it apart:
 
 ### Vultr
 
-Parallel workers that judges watch pick up timelines and return results, parallel walk-forward backtests with a reported speed-up, and model training. The timing audit doesn't happen without Vultr compute provisioned on demand.
+Parallel workers that judges watch pick up timelines and return results, and the backend box that hosts the dashboard and runs the decider every half hour. The timing audit doesn't happen without Vultr compute provisioned on demand.
 
 ### Tiger Data
 
