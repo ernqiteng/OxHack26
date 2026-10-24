@@ -21,8 +21,83 @@ SELECT create_hypertable('grid_raw', 'start_time', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS grid_raw_dataset_series_idx ON grid_raw (dataset, series, start_time DESC);
 CREATE INDEX IF NOT EXISTS grid_raw_available_at_idx    ON grid_raw (available_at DESC);
 
--- TODO (Girik, Phase 1): continuous aggregates prices_hh -> prices_daily -> prices_weekly
--- TODO (Girik, Phase 3): compression policy on grid_raw chunks older than 7 days
+-- ---------------------------------------------------------------------------
+-- Hierarchical continuous aggregates: prices_hh -> prices_daily -> prices_weekly
+-- WITH NO DATA so the file can run inside a transaction (and on Tiger); refresh policies fill them.
+-- materialized_only = false: real-time aggregation, so the live chart includes rows newer than the last refresh.
+-- MID volume is stored as its own grid_raw row with series 'APXMIDP:volume'.
+-- Daily/weekly buckets are UK settlement days (Europe/London), so clock-change days are 46/50 periods.
+-- These aggregates are keyed on start_time and carry no available_at; point-in-time guards live in
+-- tempo/features/build.py.
+-- ---------------------------------------------------------------------------
+CREATE MATERIALIZED VIEW IF NOT EXISTS prices_hh
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+SELECT time_bucket('30 minutes', start_time)                  AS bucket,
+       avg(value) FILTER (WHERE series = 'APXMIDP')           AS price,
+       sum(value) FILTER (WHERE series = 'APXMIDP:volume')    AS volume
+FROM grid_raw
+WHERE dataset = 'MID' AND series IN ('APXMIDP', 'APXMIDP:volume')
+GROUP BY 1
+WITH NO DATA;
+
+-- n, sum_price, sum_sq let prices_weekly compute an exact stddev over half-hours.
+CREATE MATERIALIZED VIEW IF NOT EXISTS prices_daily
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+SELECT time_bucket('1 day', bucket, 'Europe/London') AS bucket,
+       avg(price)              AS mean,
+       min(price)              AS min,
+       max(price)              AS max,
+       max(price) - min(price) AS spread,
+       count(price)            AS n,
+       sum(price)              AS sum_price,
+       sum(price * price)      AS sum_sq
+FROM prices_hh
+GROUP BY 1
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS prices_weekly
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+SELECT time_bucket('1 week', bucket, 'Europe/London') AS bucket,
+       sum(sum_price) / NULLIF(sum(n), 0) AS mean,
+       sqrt(greatest((sum(sum_sq) - sum(sum_price) * sum(sum_price) / NULLIF(sum(n), 0))
+                     / NULLIF(sum(n) - 1, 0), 0)) AS stddev,
+       avg(spread) AS spread_mean
+FROM prices_daily
+GROUP BY 1
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('prices_hh',
+  start_offset => INTERVAL '3 days', end_offset => INTERVAL '30 minutes',
+  schedule_interval => INTERVAL '5 minutes', if_not_exists => TRUE);
+SELECT add_continuous_aggregate_policy('prices_daily',
+  start_offset => INTERVAL '4 days', end_offset => INTERVAL '1 hour',
+  schedule_interval => INTERVAL '30 minutes', if_not_exists => TRUE);
+SELECT add_continuous_aggregate_policy('prices_weekly',
+  start_offset => INTERVAL '3 weeks', end_offset => INTERVAL '1 hour',
+  schedule_interval => INTERVAL '1 hour', if_not_exists => TRUE);
+
+-- Columnstore compression on grid_raw, enabled BEFORE the backfill (moved from Phase 3): uncompressed,
+-- 2 years is ~1.2 GB at ~350 B/row, compressed ~120-250 MB, and the Tiger free service has ~390 MiB free.
+-- segmentby dataset,series: each series compresses as its own run; a backfill of a new dataset into an
+-- already-compressed chunk touches no existing segment. orderby start_time,available_at matches the PK.
+ALTER TABLE grid_raw SET (
+  timescaledb.compress,
+  timescaledb.compress_segmentby = 'dataset, series',
+  timescaledb.compress_orderby   = 'start_time, available_at'
+);
+SELECT add_compression_policy('grid_raw', INTERVAL '7 days', if_not_exists => TRUE);
+
+-- Backfill bookkeeping: one row per fetched window, written in the same transaction as its upsert.
+-- Resume checks this table, never grid_raw: inferring coverage from rows is wrong for spill-over,
+-- sparse datasets and short windows (the first 2-year run silently loaded half of MID that way).
+CREATE TABLE IF NOT EXISTS ingest_log (
+  dataset      text        NOT NULL,
+  window_start timestamptz NOT NULL,
+  window_end   timestamptz NOT NULL,
+  rows         integer     NOT NULL,
+  fetched_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (dataset, window_start, window_end)
+);
 
 -- ---------------------------------------------------------------------------
 -- Forecasts and decisions
