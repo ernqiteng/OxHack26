@@ -59,9 +59,7 @@ def holdout_report(X: pd.DataFrame, y: pd.Series, holdout_days: int, **params) -
     }
 
 
-def train(
-    conn, *, days: int, every_h: int, out: Path, holdout_days: int = 7, until=None, **params
-) -> dict:
+def train(conn, *, days: int, every_h: int, out: Path, holdout_days: int = 7, until=None, **params) -> dict:
     """until (optional): train only on prices published by then, for a model that may make decisions dated
     from `until` on without having seen their outcomes."""
     t0 = time.monotonic()
