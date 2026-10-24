@@ -173,6 +173,11 @@ class LocalWorkerPool(HttpWorkerPool):
         if app is None:
             from tempo.worker.main import app
         self.app = app
+        if "token" not in kwargs:
+            # The in-process worker reads TEMPO_WORKER_TOKEN from the same environment, so send it.
+            from tempo.config import env
+
+            kwargs["token"] = env("TEMPO_WORKER_TOKEN")
         slots = [WorkerSlot(f"local-{k}", f"http://local-{k}") for k in range(1, n + 1)]
         super().__init__(slots, **kwargs)
 

@@ -9,6 +9,7 @@ served in-process (LocalWorkerPool). Each fork gets its own connection string, e
 import os
 import threading
 import time
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -78,6 +79,12 @@ class TemplateTiger:
         return [Service(db, name, "READY") for db, name in self.live.items()]
 
 
+@pytest.fixture(autouse=True)
+def _no_token(monkeypatch):
+    """.env may carry TEMPO_WORKER_TOKEN; the TestClient calls below post without one."""
+    monkeypatch.delenv("TEMPO_WORKER_TOKEN", raising=False)
+
+
 @pytest.fixture
 def source_db(db_conn):
     """A fresh database with the real schema, a plain prices_hh table, one decision batch and a start SoC."""
@@ -88,14 +95,17 @@ def source_db(db_conn):
     mw = rng.choice([-1.0, 0.0, 0.0, 1.0], size=48)
     with psycopg.connect(url_for(SRC), autocommit=True) as src:
         src.execute(SCHEMA)
-        src.execute(
-            "CREATE TABLE IF NOT EXISTS prices_hh "
-            "(bucket timestamptz PRIMARY KEY, price float8, volume float8)"
-        )
+        # prices_hh is Girik's continuous aggregate over grid_raw (series APXMIDP + APXMIDP:volume),
+        # so seed the raw rows and refresh it, exactly as the real backfill does.
         with src.cursor() as cur:
             cur.executemany(
-                "INSERT INTO prices_hh VALUES (%s, %s, 100)",
-                [(t, float(p)) for t, p in zip(targets(), day_prices(3), strict=True)],
+                "INSERT INTO grid_raw (start_time, available_at, dataset, series, value) "
+                "VALUES (%s, %s, 'MID', %s, %s)",
+                [
+                    (t, t + timedelta(minutes=40), "APXMIDP", float(p))
+                    for t, p in zip(targets(), day_prices(3), strict=True)
+                ]
+                + [(t, t + timedelta(minutes=40), "APXMIDP:volume", 100.0) for t in targets()],
             )
             ids = []
             for t, m in zip(targets(), mw, strict=True):
@@ -107,6 +117,11 @@ def source_db(db_conn):
                 )
                 ids.append(cur.fetchone()[0])
             cur.execute("INSERT INTO battery_state VALUES (%s, 0.7, 0, 'live')", (T0,))
+        src.execute(
+            "CALL refresh_continuous_aggregate('prices_hh', %s, %s)",
+            (T0 - timedelta(days=1), T0 + timedelta(days=2)),
+        )
+        assert src.execute("SELECT count(*) FROM prices_hh").fetchone()[0] == 48
     yield admin, ids[0]
     drop(admin, SRC)
     for (db,) in admin.execute("SELECT datname FROM pg_database WHERE datname LIKE 'f_audit_%'").fetchall():
