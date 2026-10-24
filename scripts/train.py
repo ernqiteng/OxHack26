@@ -85,7 +85,7 @@ def train(conn, *, days: int, every_h: int, out: Path, holdout_days: int = 7, **
     model.fit(X, y)
     paths = model.save(out)
     meta = {
-        "trained_at": pd.Timestamp.utcnow().isoformat(),
+        "trained_at": pd.Timestamp.now("UTC").isoformat(),
         "decision_times": len(times),
         "window": [str(times[0]), str(times[-1])],
         "every_h": every_h,

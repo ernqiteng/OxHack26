@@ -100,3 +100,16 @@ def test_other_run_ids_do_not_touch_live(synthetic_month, model):
 def test_naive_now_rejected(synthetic_month, model):
     with pytest.raises(ValueError, match="timezone-aware"):
         run_decision(synthetic_month, NOW.replace(tzinfo=None), model, GreedyOptimiser())
+
+
+def test_dashboard_calibration_reads_settled_live_forecasts(synthetic_month, model):
+    from tempo.dashboard.data import DbSource
+
+    conn = synthetic_month
+    run_decision(conn, NOW, model, GreedyOptimiser())  # all 48 targets have prices in the synthetic month
+    src = DbSource(conn)
+    cal = src.calibration()
+    assert "calibration" not in src.notes
+    assert cal.nominal.tolist() == [0.1, 0.5, 0.9]
+    assert ((cal.observed >= 0) & (cal.observed <= 1)).all()
+    assert cal.attrs["n"] == 48 and 0 <= cal.attrs["coverage_p10_p90"] <= 1
