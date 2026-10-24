@@ -472,8 +472,7 @@ period end + 10 min.
 
 def main() -> None:
     src, _ = get_source()
-    header_strip()
-    st.divider()
+    top = st.container()  # filled last, so the status dots reflect the notes the sections set
     section_live(src)
     st.divider()
     section_replay(src)
@@ -483,6 +482,9 @@ def main() -> None:
     section_honesty(src)
     st.divider()
     section_about()
+    with top:
+        header_strip()
+        st.divider()
 
 
 main()

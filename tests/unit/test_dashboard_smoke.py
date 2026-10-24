@@ -37,9 +37,7 @@ def test_app_runs_without_exceptions(app):
     assert any("Click a decision" in h for h in heads)  # Audit sentence before a run
     assert any("% of perfect-foresight profit" in h for h in heads)  # Honesty sentence
     assert any("Most projects stop at a prediction" in h for h in heads)  # About
-    assert any("synthetic" in c.value for c in app.caption) or any(
-        "synthetic" in str(h) for h in app.get("html")
-    )
+    assert any("settlement period" in c.value for c in app.caption)  # header strip
 
 
 def test_live_section_has_pills_and_charts(app):
