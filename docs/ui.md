@@ -280,6 +280,8 @@ Fig 3.2 · Cost of mistiming (£ vs as decided)
 Self-grade · timing within one period of hindsight-optimal on 71% of 38 cycles · mean cost of mistiming £9.40
 ```
 
+*The numbers in this mock-up are placeholders. The real self-grade on 25 Oct was 87.5% of 8 cycles, £6.37 mean cost of mistiming; the dashboard reads it from the database.*
+
 Details:
 
 - **Choreography.** On click, `run_audit(mode="fork")` runs in a background thread writing per-shift state

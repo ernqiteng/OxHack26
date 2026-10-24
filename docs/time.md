@@ -21,7 +21,7 @@ Work that is planned but **not built**. Nothing in this file exists in the code 
 
 **Blockers and risks.**
 
-- The Vultr account belongs to Ayo, and the `.env` on Ernqi's laptop has no `VULTR_API_KEY`: Ayo has to deploy.
+- The Vultr account belongs to Ayo. Ernqi's `.env` now has `VULTR_API_KEY`, but none of the boxes accept Ernqi's SSH key (they were created with Ayo's), so building and deploying a new worker image still goes through Ayo. Ernqi's `VULTR_WORKER_SNAPSHOT_ID` also points at a deleted snapshot (the live image is `21236d6e…`).
 - The workers are created from a snapshot, so new worker code means rebuilding the snapshot and the pool. The same five workers run the timing audit, so deploy only after the audit has been rehearsed, and never on demo day.
 - A running backtest must mark workers busy so that an audit click cannot land on a busy worker.
 

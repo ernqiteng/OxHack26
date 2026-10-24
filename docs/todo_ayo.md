@@ -4,7 +4,7 @@ Status check against [ayo.md](ayo.md). Everything that could be built without te
 
 ## Done and verified
 
-- Phase 0, 1, 2 code: Tiger and Vultr clients, replay, in-process and fork audits, worker service, worker pools, dashboard reading real tables, go/no-go script, worker image (snapshot `5294fe96…`, in `.env`). 143 tests green on main after the merge; live fork audit passed twice on Tiger.
+- Phase 0, 1, 2 code: Tiger and Vultr clients, replay, in-process and fork audits, worker service, worker pools, dashboard reading real tables, go/no-go script, worker image (first snapshot `5294fe96…`, since deleted; the current image is `21236d6e…`, see below. Check `VULTR_WORKER_SNAPSHOT_ID` in `.env` points at it before re-running `create_workers.py`). 143 tests green on main after the merge; live fork audit passed twice on Tiger.
 - Story updated to one fork per click (description.md section 11 has the pitch line for the Tiger limit).
 
 ## Done Sat 24 Oct evening (items 1 to 5 of the first draft)
@@ -12,23 +12,23 @@ Status check against [ayo.md](ayo.md). Everything that could be built without te
 - Five Vultr workers `tempo-worker-1..5` in `ewr` from snapshot `21236d6e…` (Ernqi's simulator baked in),
   `scripts/create_workers.py` creates/lists/deletes the pool and writes `TEMPO_WORKER_URLS` to `.env`.
 - Backend box `tempo-backend` in `lhr`, dashboard at http://136.244.77.120:8501, `scripts/create_backend.py`
-  creates and redeploys it (`--deploy` after any code change). Poller unit installed, enabled once Girik's
-  `scripts/poll.py` exists.
+  creates and redeploys it (`--deploy` after any code change). Poller and decider units both run there
+  (item 6, a.md).
 - Gate 2 screenshots in `docs/screenshots/`; live fork audit passed on the real pool from the test suite and
   from the public dashboard (36 s, fork + 5 workers, numbers equal to in-process).
 - Dashboard: fork mode with background job, per-shift progress and log; paper theme, Report frame, header
   strip with status dots; hero sentence; rehearsal decision via `scripts/seed_selftest.py`.
-- `demo_reset.py` says GO on everything except "decision" (needs Ernqi) and warns about the rehearsal rows.
+- `demo_reset.py` said GO on everything except "decision" (needs Ernqi) and warned about the rehearsal rows. Both resolved since: it says GO and picks #1353, and the rehearsal rows are gone.
 
 ## To do, in order
 
 ### Now (no one else needed)
 
-1. ~~Create the five workers~~ done. **Create the five workers from the snapshot** in `ewr`, tag `tempo-worker`, labels `tempo-worker-1..5`, `VULTR_SSHKEY_ID` on each. Then `scripts/demo_reset.py` should stop warning about local workers, and `TEMPO_LIVE=1 pytest tests/live/test_full_audit.py -s` should run on the real pool. Record create-to-SSH timing in needs.md B4 (still unticked).
+1. ~~Create the five workers~~ done. **Create the five workers from the snapshot** in `ewr`, tag `tempo-worker`, labels `tempo-worker-1..5`, `VULTR_SSHKEY_ID` on each. Then `scripts/demo_reset.py` should stop warning about local workers, and `TEMPO_LIVE=1 pytest tests/live/test_full_audit.py -s` should run on the real pool. Create-to-SSH timing is in needs.md B4 (39 s to active, 78 s to SSH).
 2. ~~Backend box~~ done. **Backend box** in `lhr` (`vc2-1c-2gb`): `deploy/bootstrap.sh` with `ROLE=backend`, copy `.env`, enable `tempo-dashboard` and (once Girik's `scripts/poll.py` exists) `tempo-poller`. The dashboard needs `TEMPO_DATABASE_URL` and the Tiger keys on the box; the box must be in Vultr's API allow-list if it ever calls Vultr.
 3. ~~Gate 2 screenshot~~ done. **Gate 2 screenshot.** The dashboard against Tiger now shows real prices (two years) and Ernqi's real backtest table. Take it and put it in `docs/` or the repo wiki; ayo.md asks for it.
 4. ~~Dashboard fork mode~~ done. **Dashboard fork mode** (ayo.md Phase 2 task 5, ui.md step 4 to 5): the "forks" toggle still runs in-process. Run `run_audit(mode='fork')` in a background thread, poll `AuditProgress` with a fragment, show per-shift states and the log, disable the button while running. This is the one visible gap in the live demo.
-5. ~~UI build~~ done (Streamlit option A; the Next.js pitch page in ui-plan.md steps 1 to 5 is not started). **UI build** per ui.md steps 1 to 4 and 6 (header strip with status dots, Live chart with now-rule and action glyphs, five bordered audit columns with the generated sentence, Honesty ladder), with the visual theme from ui-plan.md, which supersedes ui.md section 3. ui-plan.md and the matching README and ui.md edits are still uncommitted in the working tree.
+5. ~~UI build~~ done (Streamlit option A; the Next.js pitch page in ui-plan.md steps 1 to 5 is not started). **UI build** per ui.md steps 1 to 4 and 6 (header strip with status dots, Live chart with now-rule and action glyphs, five bordered audit columns with the generated sentence, Honesty ladder), with the visual theme from ui-plan.md, which supersedes ui.md section 3. ui-plan.md and the matching README and ui.md edits are committed.
 
 ### When Girik's poller exists
 

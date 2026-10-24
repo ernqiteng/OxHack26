@@ -172,7 +172,7 @@ hierarchical continuous aggregates (half-hourly → daily → weekly)
         │
 feature pipeline (only data available before decision time)
         │
-forecaster on Vultr  → 48-period price quantiles (p10 / p50 / p90)
+forecaster on the Vultr backend box  → 48-period price quantiles (p10 / p50 / p90)
         │
 battery optimiser (greedy live; cvxpy LP as a backtest row), cost-gated: charge / discharge / hold
         │
@@ -209,13 +209,13 @@ Take Tiger Data away and both the feature pipeline and the signature mechanic go
 
 ### Vultr
 
-- **Parallel replay workers** for the timing audit, provisioned via the Vultr API. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
+- **Parallel replay workers** for the timing audit: five instances (`tempo-worker-1..5`, `vc2-1c-1gb` in `ewr`, next to Tiger's `us-east-1`), created from one snapshot through the Vultr API and kept running all day. A click sends each one a timeline over HTTP. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
+- **Backend box** (`tempo-backend`, `vc2-1c-2gb` in `lhr`): hosts the dashboard and runs the price poller and the live decider (forecast plus greedy optimiser) every half hour.
 - **If time allows, not built:** parallel walk-forward backtests on the workers with a measured speed-up, and a battery-size sweep. See [time.md](time.md).
-- **Backend and dashboard hosting**, the least interesting part.
 
-The timing audit doesn't happen without Vultr compute provisioned on demand.
+The workers are pre-warmed rather than created on the click, because a new instance takes about 40 s to boot and 80 s to accept SSH. The click still calls the Vultr API to find the tagged workers. Without them the audit falls back to the same replay run in-process, which is not the parallel story.
 
-Model training is not a Vultr job. LightGBM trains on a laptop CPU in about 90 seconds, most of it fetching features from Tiger, and the model is then copied to the backend box. GPU plans are not available to this account (every Vultr GPU plan reports no locations, checked via the API), and gradient-boosted trees on tabular features do not need one.
+Model training is not a Vultr job. LightGBM trains on a laptop CPU in about 90 seconds, most of it fetching features from Tiger, and the model is then copied to the backend box. No GPU is used: gradient-boosted trees on tabular features do not need one. (The account's GPU access is unclear: on 24 Oct no GPU plan reported any location, but a short-lived A16 instance was later created on it. Either way, nothing in Tempo runs on a GPU.)
 
 ---
 
@@ -262,7 +262,7 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 
 | Gate | Done when | Decisions made here |
 |---|---|---|
-| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU: checked, not available on this account, CPU only. Vultr instance limit checked. Who owns what. |
+| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU: checked, no GPU plan had a location on this account at the time, so CPU only. Vultr instance limit checked. Who owns what. |
 | **Gate 1: Data** | History loaded, live polling running, aggregates building | Confirm availability-time stamping on every row |
 | **Gate 2: Baseline demo** | Backtest table with simple rule, greedy + persistence, perfect foresight | Lookahead sanity check: only perfect foresight should "know" the future |
 | **Gate 3: Tempo decides** | LightGBM forecast feeding the cost gate, Tempo row in the table | |
@@ -284,7 +284,7 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 | Forks too slow on the day | Primary database is a free service (forks ready in 36 to 42 s in testing). If still slow, pre-create the fork before the demo and have the click dispatch workers into it, or switch the toggle to in-process ("same replay, run locally") |
 | Tiger free tier allows only 2 services | Audit uses one fork per click (section 11). Nobody creates other forks on demo day; `demo_reset.py` checks only the primary exists. The audit button is disabled while an audit runs |
 | Unfamiliar domain for judges | Open with the buy-low-sell-high line |
-| Vultr GPU not available (confirmed: no GPU plan has any location for this account) | Train on CPU, lean on parallel workers as the Vultr story, never say "GPU" on stage |
+| No GPU in the build (no GPU plan had a location on 24 Oct; an A16 instance was briefly created later but nothing ran on it) | Train on CPU, lean on parallel workers as the Vultr story, never say "GPU" on stage |
 
 ---
 
@@ -318,7 +318,7 @@ What sets it apart:
 
 ### Vultr
 
-Parallel workers that judges watch pick up timelines and return results, and the backend box that hosts the dashboard and runs the decider every half hour. The timing audit doesn't happen without Vultr compute provisioned on demand.
+Parallel workers that judges watch pick up timelines and return results, and the backend box that hosts the dashboard and runs the decider every half hour. Five pre-warmed Vultr workers are what make the five timelines run in parallel on separate machines.
 
 ### Tiger Data
 

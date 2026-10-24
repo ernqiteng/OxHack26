@@ -226,7 +226,7 @@ availability-time stamping and the stated MID delay.
 | 1 | Trade reconstruction | `FORECAST` / **48 half-hours ahead, with its doubt attached.** bullets: persistence baseline, LightGBM, p10/p50/p90 | price curve with a band that widens with horizon (`drawLine` then `fill` fade) |
 | 2 | eComms surveillance | `DECIDE` / **Charge, sell, or deliberately do nothing.** bullets: cost gate (10% loss + degradation), greedy then LP, holds logged with a reason | three inputs (forecast, SoC, costs) → hub → `charge / sell / hold` outputs, `flow` edges |
 | 3 | Horizon scanning | `TIMING AUDIT` / **Run the same decision an hour earlier and an hour later.** bullets: five Tiger forks, Vultr workers, £ delta, forks deleted after | five vertical timeline columns popping in with `popIn`, middle one brand-filled, `ping` on it |
-| 4 | Trade monitoring | `SELF-GRADE` / **Within one period of hindsight on 71% of cycles.** (number from the DB at build time) | signal lines converging on a triangle like Toven's alert, recoloured: late/early shifts fade, centre holds |
+| 4 | Trade monitoring | `SELF-GRADE` / **Within one period of hindsight on 71% of cycles.** (placeholder: use the number from the DB at build time; on 25 Oct it was 87.5% of 8 cycles) | signal lines converging on a triangle like Toven's alert, recoloured: late/early shifts fade, centre holds |
 | 5 | Publication review | `HONESTY` / **Pounds on weeks the model never saw, against baselines that can't cheat.** | document mock becomes the backtest ladder: four bars, perfect dashed at 100% |
 | 6 | What's next | `WHAT'S NEXT` / **Battery-size sweeps, similar-day search, a real day-ahead desk.** | four locked tiles + dots, same as Toven |
 
