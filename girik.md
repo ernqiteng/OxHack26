@@ -1,4 +1,4 @@
-# Part A: Data (Ayo)
+# Part A: Data (Girik)
 
 Gate reached: _(write date/time here as you pass each gate)_
 
@@ -8,7 +8,7 @@ You own everything between Elexon and the feature DataFrame. If your part is rig
 
 **You depend on:** nothing. Ernqi's synthetic fixture is useful for testing `build_features` before the backfill finishes.
 
-**Others depend on you for:** `schema.sql` (everyone, from Phase 0), `prices_hh` on Tiger (Ernqi's backtest, Girik's dashboard, Phase 1 exit), `build_features` (Ernqi's `run_decision`, Phase 2).
+**Others depend on you for:** `schema.sql` (everyone, from Phase 0), `prices_hh` on Tiger (Ernqi's backtest, Ayo's dashboard, Phase 1 exit), `build_features` (Ernqi's `run_decision`, Phase 2).
 
 Endpoint details, volumes and quirks are in [needs.md](needs.md) section B3. Read it before writing the client.
 
@@ -67,7 +67,7 @@ Schema applied locally and on Tiger. Contract test green. Freeze the schema with
 
 ### Exit (Gate 1)
 
-Two years in Tiger for MID, WINDFOR, NDF, INDO, FUELHH, DISEBSP. Aggregates populated. Tell Ernqi and Girik the row counts and that `prices_hh` is live. Lookahead check: `SELECT count(*) FROM grid_raw WHERE available_at > now()` is 0 for non-forecast datasets.
+Two years in Tiger for MID, WINDFOR, NDF, INDO, FUELHH, DISEBSP. Aggregates populated. Tell Ernqi and Ayo the row counts and that `prices_hh` is live. Lookahead check: `SELECT count(*) FROM grid_raw WHERE available_at > now()` is 0 for non-forecast datasets.
 
 ---
 
@@ -75,7 +75,7 @@ Two years in Tiger for MID, WINDFOR, NDF, INDO, FUELHH, DISEBSP. Aggregates popu
 
 ### Tasks
 
-1. `tempo/ingest/poll.py`: every 60 s read `/datasets/metadata/latest`; for each dataset whose `lastUpdated` moved, fetch the last 2 days with the non-stream endpoint and upsert. Also poll MID via `/balancing/pricing/market-index` for the last 2 days. Log one line per fetch. Run it as a `systemd` unit or `nohup` on Girik's backend box (hand him the unit file).
+1. `tempo/ingest/poll.py`: every 60 s read `/datasets/metadata/latest`; for each dataset whose `lastUpdated` moved, fetch the last 2 days with the non-stream endpoint and upsert. Also poll MID via `/balancing/pricing/market-index` for the last 2 days. Log one line per fetch. Run it as a `systemd` unit or `nohup` on Ayo's backend box (hand them the unit file).
 2. `tempo/features/build.py::build_features(conn, decision_time, horizon=48)`:
    - Target rows: `decision_time + 30 min * k` for `k = 1..48`, aligned to the half hour.
    - Feature columns, each computed from a SQL query with `WHERE available_at <= :decision_time`:
@@ -109,7 +109,7 @@ Poller running on the backend with a log showing fetches. `build_features(now())
 ### Tasks
 
 1. Add a columnstore / compression policy on `grid_raw` for chunks older than 7 days (`ALTER TABLE grid_raw SET (timescaledb.compress, timescaledb.compress_segmentby = 'dataset, series', timescaledb.compress_orderby = 'start_time')` plus `add_compression_policy`). Run it once manually so the stats exist before the demo.
-2. `tempo/db/stats.py::storage_stats(conn) -> dict` returning total rows, before and after bytes, and compression ratio from `hypertable_compression_stats`. Girik renders it.
+2. `tempo/db/stats.py::storage_stats(conn) -> dict` returning total rows, before and after bytes, and compression ratio from `hypertable_compression_stats`. Ayo renders it.
 3. Time the two-year query `SELECT bucket, price FROM prices_hh ORDER BY bucket` on Tiger; it should be well under 1 s. If not, add an index or check the refresh policy.
 
 ### Tests
@@ -120,7 +120,7 @@ Poller running on the backend with a log showing fetches. `build_features(now())
 
 ### Exit
 
-Stats visible on Girik's dashboard. Two-year chart instant.
+Stats visible on Ayo's dashboard. Two-year chart instant.
 
 ---
 
@@ -128,4 +128,4 @@ Stats visible on Girik's dashboard. Two-year chart instant.
 
 - FUELINST 5-minute load for the row count.
 - pgvector "similar days": a 48-dim price-shape vector per day in a `day_vectors` table, `nearest_days(date, k)` query. Test: a day's nearest neighbour is itself at distance 0, and on synthetic data even weeks cluster with even weeks.
-- Help Girik with `demo_reset.py` data checks.
+- Help Ayo with `demo_reset.py` data checks.

@@ -1,4 +1,4 @@
-# Part C: Stage (Girik)
+# Part C: Stage (Ayo)
 
 Gate reached: _(write date/time here as you pass each gate)_
 
@@ -6,9 +6,9 @@ You own everything the judges see and everything that spins up on demand: Tiger 
 
 **You own:** `tempo/infra/`, `tempo/audit/` (except `selfgrade.py`, Ernqi writes the maths), `tempo/worker/`, `tempo/dashboard/`, `scripts/demo_reset.py`, the backend box, the worker pool, the backup recording.
 
-**You depend on:** Ernqi's `Battery` and `simulate` (Phase 1) for replay; Ernqi's `decisions` rows (Phase 2) for the audit; Ayo's `prices_hh` (Phase 1) and `storage_stats` (Phase 3) for the dashboard. Until they land, you work against the synthetic fixture and against `decisions` rows you insert yourself in tests.
+**You depend on:** Ernqi's `Battery` and `simulate` (Phase 1) for replay; Ernqi's `decisions` rows (Phase 2) for the audit; Girik's `prices_hh` (Phase 1) and `storage_stats` (Phase 3) for the dashboard. Until they land, you work against the synthetic fixture and against `decisions` rows you insert yourself in tests.
 
-**Others depend on you for:** `replay_shift` (Ernqi's self-grade, Phase 3), the backend box where Ayo's poller runs (Phase 2), the dashboard that shows everyone's work.
+**Others depend on you for:** `replay_shift` (Ernqi's self-grade, Phase 3), the backend box where Girik's poller runs (Phase 2), the dashboard that shows everyone's work.
 
 Tiger and Vultr endpoints, limits and the pre-warm reasoning are in [needs.md](needs.md) sections B1, B2 and B4.
 
@@ -19,10 +19,10 @@ Tiger and Vultr endpoints, limits and the pre-warm reasoning are in [needs.md](n
 ### Tasks
 
 1. Vultr: API key, check Billing → Limits (need ≥ 6 instances), request an increase now if lower. Deploy one `vc2-1c-1gb` in `ewr` from the API and time create → `active` → SSH-able. Write the number in needs.md B4.
-2. Tiger: project ID and client credentials. Fork Ayo's free service once with `fork_strategy: "NOW"` via REST, poll to `READY`, time it, delete it. Write the number in needs.md B2.
+2. Tiger: project ID and client credentials. Fork Girik's free service once with `fork_strategy: "NOW"` via REST, poll to `READY`, time it, delete it. Write the number in needs.md B2.
 3. `tempo/infra/tiger.py::TigerClient` and `tempo/infra/vultr.py::VultrClient` skeletons with the method signatures from plan.md 2.2, using `httpx`.
 4. `tempo/dashboard/app.py`: Streamlit skeleton with the five tabs from the demo script (Live, Replay, Timing audit, Honesty, About), each rendering the synthetic fixture.
-5. Backend box: one Vultr instance in `lhr` with Python, the repo, `.env`, and a `systemd` unit template for Ayo's poller and for the Streamlit app.
+5. Backend box: one Vultr instance in `lhr` with Python, the repo, `.env`, and a `systemd` unit template for Girik's poller and for the Streamlit app.
 
 ### Tests
 
@@ -63,9 +63,9 @@ Timings written down. Clients merged. Dashboard skeleton runs locally with `stre
 - `tests/unit/test_dashboard_smoke.py` (`streamlit.testing.v1.AppTest`): the app runs without exceptions against a stub connection returning the synthetic fixture; each tab renders at least one chart or table.
 - `tests/contracts/test_audits_contract.py` (shared, you write it).
 
-### Exit (Gate 2, with Ayo and Ernqi)
+### Exit (Gate 2, with Girik and Ernqi)
 
-Dashboard on the backend box shows Ayo's real live period and Ernqi's real backtest table. In-process audit works on a synthetic decision. This is the first real demo; screenshot it.
+Dashboard on the backend box shows Girik's real live period and Ernqi's real backtest table. In-process audit works on a synthetic decision. This is the first real demo; screenshot it.
 
 ---
 
@@ -103,7 +103,7 @@ Click a real decision, five forks, five workers, five numbers, under two minutes
 
 1. **Pre-warm and resilience:** `scripts/demo_reset.py` checks the five workers' `/health`, deletes stale `audit-*` forks, verifies the primary service is `READY`, picks a good `decision_id` (Ernqi gives you one), and prints a go/no-go line. Run it before every rehearsal.
 2. **Replay tab:** choose a historical windy week, animate forward period by period: forecast band vs actual, battery SoC, cumulative £. Use `backtest_results` and a stored schedule for that week from Ernqi.
-3. **Honesty tab:** calibration chart (Ernqi's reliability table), regime breakdown, "where it's weak" sentences, Ayo's `storage_stats` line ("X rows, compressed Y%").
+3. **Honesty tab:** calibration chart (Ernqi's reliability table), regime breakdown, "where it's weak" sentences, Girik's `storage_stats` line ("X rows, compressed Y%").
 4. **Live tab:** uncertainty bands on the next 24 h from `forecasts`, today's schedule, hold reasons.
 5. Self-grade line from Ernqi's `self_grade` on the Timing audit tab.
 6. Backup: full recorded run of the demo path. Store it off the laptop too.

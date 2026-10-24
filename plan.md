@@ -6,9 +6,9 @@ Three developers, three independent parts:
 
 | Part | Owner | File | One line |
 |---|---|---|---|
-| A: Data | Ayo | [ayo.md](ayo.md) | Elexon → Tiger Data hypertables → aggregates → point-in-time features |
+| A: Data | Girik | [girik.md](girik.md) | Elexon → Tiger Data hypertables → aggregates → point-in-time features |
 | B: Brain | Ernqi | [ernqi.md](ernqi.md) | Battery sim → optimiser → forecaster → walk-forward backtest → honesty metrics |
-| C: Stage | Girik | [girik.md](girik.md) | Tiger forks + Vultr workers → timing audit → dashboard → demo |
+| C: Stage | Ayo | [ayo.md](ayo.md) | Tiger forks + Vultr workers → timing audit → dashboard → demo |
 
 The parts are independent because of three things agreed in Phase 0 and never changed afterwards: the **database schema**, the **Python interfaces** between modules, and a **synthetic fixture dataset** that B and C build against before A's real data lands.
 

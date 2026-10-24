@@ -6,9 +6,9 @@ You own the battery, the optimiser, the forecaster, the walk-forward backtest an
 
 **You own:** `tempo/sim/`, `tempo/forecast/`, `tempo/optimise/`, `tempo/backtest/`, `tempo/decide/`, `tests/fixtures/synthetic.py`, `scripts/train.py`, `scripts/backtest.py`.
 
-**You depend on:** Ayo's `prices_hh` on Tiger (Phase 1 exit) and `build_features` (Phase 2 exit). Until those land you work entirely on the synthetic fixture, which you write first, so you are never blocked.
+**You depend on:** Girik's `prices_hh` on Tiger (Phase 1 exit) and `build_features` (Phase 2 exit). Until those land you work entirely on the synthetic fixture, which you write first, so you are never blocked.
 
-**Others depend on you for:** `make_synthetic_market` (everyone, Phase 0), `Battery` and `simulate` (Girik's replay and worker, Phase 1), `decisions` rows (Girik's audit and dashboard, Phase 2), `backtest_results` (Girik's honesty panel, Phase 1 exit).
+**Others depend on you for:** `make_synthetic_market` (everyone, Phase 0), `Battery` and `simulate` (Ayo's replay and worker, Phase 1), `decisions` rows (Ayo's audit and dashboard, Phase 2), `backtest_results` (Ayo's honesty panel, Phase 1 exit).
 
 Battery parameters and the price-series decision are in [description.md](description.md) section 3 and [needs.md](needs.md) section A3.
 
@@ -35,7 +35,7 @@ Battery parameters and the price-series decision are in [description.md](descrip
 
 ### Exit
 
-Fixture merged to `main`. Girik and Ayo can import it.
+Fixture merged to `main`. Ayo and Girik can import it.
 
 ---
 
@@ -59,7 +59,7 @@ Fixture merged to `main`. Girik and Ayo can import it.
    - Strategies in Phase 1: `simple_rule` (charge 01:00 to 05:00, discharge 17:00 to 19:00, every day), `persistence_greedy` (yesterday's prices as the forecast, greedy optimiser), `perfect`.
    - Writes `backtest_results` rows with `run_id`, `week_start`, `strategy`, `pnl_gbp`, `perfect_pnl_gbp`, `pct_of_perfect`, `regime` (regime is `'windy'` if the week's mean WINDFOR share is above the median, else `'calm'`).
 6. `tempo/backtest/metrics.py::summary(results) -> DataFrame` with total £ and % of perfect per strategy, the table in description.md section 3, Layer 3.
-7. `scripts/backtest.py`: runs on Tiger's `prices_hh` once Ayo's data exists; until then on synthetic.
+7. `scripts/backtest.py`: runs on Tiger's `prices_hh` once Girik's data exists; until then on synthetic.
 
 ### Tests
 
@@ -79,7 +79,7 @@ Fixture merged to `main`. Girik and Ayo can import it.
 
 ### Exit (Gate 2)
 
-Backtest table on real Tiger data for simple rule, persistence + greedy, perfect. Pass the results table to Girik. **Lookahead sanity:** no strategy exceeds perfect on any week on real data. If one does, stop and find the leak with Ayo.
+Backtest table on real Tiger data for simple rule, persistence + greedy, perfect. Pass the results table to Ayo. **Lookahead sanity:** no strategy exceeds perfect on any week on real data. If one does, stop and find the leak with Girik.
 
 ---
 
@@ -88,10 +88,10 @@ Backtest table on real Tiger data for simple rule, persistence + greedy, perfect
 ### Tasks
 
 1. `tempo/forecast/persistence.py::PersistenceForecaster`: `p50 = price_lag_1d`, `p10/p90 = p50 ± k * rolling_std` with `k` fitted on train so the band covers 80%.
-2. `tempo/forecast/lgbm.py::LightGBMQuantileForecaster`: three `LGBMRegressor(objective='quantile', alpha=a)` for a in (0.1, 0.5, 0.9), small trees (`n_estimators=300, num_leaves=15, learning_rate=0.05`), features = Ayo's `build_features` columns plus `horizon_k`. Predict, then sort the three outputs per row so `p10 <= p50 <= p90`. `save/load` with joblib.
+2. `tempo/forecast/lgbm.py::LightGBMQuantileForecaster`: three `LGBMRegressor(objective='quantile', alpha=a)` for a in (0.1, 0.5, 0.9), small trees (`n_estimators=300, num_leaves=15, learning_rate=0.05`), features = Girik's `build_features` columns plus `horizon_k`. Predict, then sort the three outputs per row so `p10 <= p50 <= p90`. `save/load` with joblib.
 3. Training data builder `tempo/forecast/dataset.py::make_training_set(conn_or_df, decision_times) -> (X, y)`: for each historical decision time (every 6 hours over the train window), call `build_features` and join the realised price per target. Honour point-in-time by construction: features come from `build_features(decision_time)`.
 4. `tempo/optimise/lp.py::LPOptimiser`: cvxpy with variables `charge[k], discharge[k] >= 0`, `soc[k]`; constraints power, capacity, SoC dynamics with efficiency; objective maximise `sum(p50 * (discharge - charge) * 0.5) - cycle_cost * sum(discharge) * 0.5 / capacity`. Optionally use `p10` for sells and `p90` for buys as a conservative variant behind a flag. Apply the cost gate post hoc per cycle to generate `reason` strings and set tiny flows to hold.
-5. `tempo/decide/engine.py::run_decision(conn, now, forecaster, optimiser, run_id='live')`: `build_features` → `predict` → `plan` → write 48 `forecasts` rows and 48 `decisions` rows (one per target period) → return the `decision_id` of the first period. The schedule for the next period is what Girik's live view shows.
+5. `tempo/decide/engine.py::run_decision(conn, now, forecaster, optimiser, run_id='live')`: `build_features` → `predict` → `plan` → write 48 `forecasts` rows and 48 `decisions` rows (one per target period) → return the `decision_id` of the first period. The schedule for the next period is what Ayo's live view shows.
 6. Add `tempo` (LightGBM + greedy) and `tempo_lp` strategies to the walk-forward backtest. Retrain per window on the train days only.
 7. `tempo/backtest/metrics.py`: `calibration(forecasts, actuals) -> dict` with the fraction of actuals inside the p10–p90 band and a 10-bin reliability table; `by_regime(results)`.
 8. `scripts/train.py`: trains on the last 90 days of Tiger data, saves `models/lgbm_{p10,p50,p90}.joblib`.
@@ -110,7 +110,7 @@ Backtest table on real Tiger data for simple rule, persistence + greedy, perfect
 
 ### Exit (Gate 3)
 
-Tempo row in the backtest table on real unseen weeks. A live `run_decision` has executed on the backend at least once with a `hold` and a readable reason. Calibration number computed. Tell Girik the `decision_id` of a good decision to click.
+Tempo row in the backtest table on real unseen weeks. A live `run_decision` has executed on the backend at least once with a `hold` and a readable reason. Calibration number computed. Tell Ayo the `decision_id` of a good decision to click.
 
 ---
 
@@ -118,7 +118,7 @@ Tempo row in the backtest table on real unseen weeks. A live `run_decision` has 
 
 ### Tasks
 
-1. `tempo/audit/selfgrade.py` (you write the maths, Girik calls it): for each completed cycle in `decisions`, use Girik's `replay_shift` in-process for shifts −2..2 and record which shift had the best PnL. `self_grade(conn, since) -> dict` with `pct_within_one_period`, `n_cycles`, `mean_cost_of_mistiming_gbp`.
+1. `tempo/audit/selfgrade.py` (you write the maths, Ayo calls it): for each completed cycle in `decisions`, use Ayo's `replay_shift` in-process for shifts −2..2 and record which shift had the best PnL. `self_grade(conn, since) -> dict` with `pct_within_one_period`, `n_cycles`, `mean_cost_of_mistiming_gbp`.
 2. Regime breakdown table and calibration chart data as plain DataFrames for the dashboard.
 3. "Where it's weak" generator: a function that returns plain-English lines such as "Simple rule reaches 71% of Tempo's profit on calm weeks" from `backtest_results`.
 
@@ -135,6 +135,6 @@ Self-grade number on the dashboard. Honesty panel populated from real backtest o
 
 ## Phase 4: Stretch (only if everything above is green)
 
-- `tempo/forecast/nn.py`: small MLP in torch on the same features; keep only if its walk-forward % of perfect beats LightGBM on real weeks. Test: trains to lower loss than a constant on synthetic in under 30 s on CPU. Record CPU vs GPU training time if Girik's Vultr GPU exists.
+- `tempo/forecast/nn.py`: small MLP in torch on the same features; keep only if its walk-forward % of perfect beats LightGBM on real weeks. Test: trains to lower loss than a constant on synthetic in under 30 s on CPU. Record CPU vs GPU training time if Ayo's Vultr GPU exists.
 - Battery-size sweep: run the backtest for capacity in {1, 2, 4, 8} MWh at 1 MW; emits a table. Test: perfect PnL is non-decreasing in capacity.
 - Conservative LP variant (`p10` sells, `p90` buys) as an extra row.
