@@ -55,7 +55,22 @@ def deploy(ip: str, key: Path, t0: float, *, enable_poller: bool) -> None:
     print("         " + out.strip().splitlines()[-1])
     # The tempo user exists only after bootstrap, so lock the .env down now.
     ssh(ip, key, "chown tempo:tempo /opt/tempo/.env && chmod 600 /opt/tempo/.env")
-    units = "tempo-dashboard" + (" tempo-poller" if enable_poller else "")
+    models = sorted((REPO_ROOT / "models").glob("lgbm_*.joblib")) + [REPO_ROOT / "models" / "training.json"]
+    models = [m for m in models if m.exists()]
+    if len(models) >= 3:
+        ssh(ip, key, "mkdir -p /opt/tempo/models && chown tempo:tempo /opt/tempo/models")
+        subprocess.run(
+            ["scp", "-i", str(key), *SSH_OPTS, *map(str, models), f"root@{ip}:/opt/tempo/models/"],
+            check=True,
+            capture_output=True,
+        )
+        ssh(ip, key, "chown -R tempo:tempo /opt/tempo/models")
+        step(t0, f"copied {len(models)} model files to /opt/tempo/models")
+    units = (
+        "tempo-dashboard"
+        + (" tempo-poller" if enable_poller else "")
+        + (" tempo-decider" if len(models) >= 3 else "")
+    )
     ssh(ip, key, f"systemctl enable --now {units} && systemctl restart {units}")
     deadline = time.monotonic() + 120
     while True:
@@ -119,6 +134,8 @@ def main() -> int:
     deploy(box.main_ip, key, t0, enable_poller=poller_ready)
     if not poller_ready:
         print("         poller not enabled: scripts/poll.py is still a stub (Girik's Phase 2)")
+    if not (REPO_ROOT / "models" / "lgbm_p50.joblib").exists():
+        print("         decider not enabled: no model in models/ (run scripts/train.py first)")
     print(f"\nssh -i {key} root@{box.main_ip}")
     return 0
 

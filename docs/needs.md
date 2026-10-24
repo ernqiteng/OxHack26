@@ -208,6 +208,13 @@ MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
 | `backtest_results` | plain table | The honesty table rows |
 | Compression policy | on `grid_raw` chunks older than 7 days | For the "compressed Y%" number |
 
+**Measured on Tiger, 24 Oct 2026 evening (Girik, Phase 3):**
+
+- **Storage line for the dashboard** (`storage_stats()`): 3,325,057 rows in `grid_raw`, 105 of 107 chunks compressed, **30.1 MiB → 6.5 MiB, 4.6× (78% saved)**. Database 66.7 MiB by `pg_database_size`; Tiger's `metrics.storage_mb` (what the 750 MB cap is enforced on) **453 of 750**. `storage_stats()` takes ~0.75 s on Tiger from a laptop, so cache it (the dashboard does, 30 s).
+- **Two-year query** `SELECT bucket, price FROM prices_hh ORDER BY bucket` (35,056 rows): **executes in 19 ms on Tiger** (`EXPLAIN ANALYZE`, planning 0.7 ms). Fetching the rows to a laptop ~280 ms from us-east-1 took **5 to 36 s**: the network, not the database (binary protocol no better). Locally it is 48 ms end to end.
+- **Therefore draw two-year charts from the aggregates**: `prices_daily` (731 rows, mean/min/max) fetched in **0.65 s** from the same laptop, `prices_weekly` (105 rows) in 0.39 s. Keep `prices_hh` for windows up to a week: the Live tab's 24 h query is 0.26 s, 168 h 0.71 s. This is the hierarchical-aggregate story for the Tiger pitch: "the full two-year query runs in 19 ms; the chart reads the daily rollup, so it is instant anywhere."
+- Pinned by `tests/db/test_two_year_query.py` (local full backfill, < 1 s end to end) and `tests/live/test_two_year_query_tiger.py` (`TEMPO_LIVE=1`: Tiger execution < 1 s, daily chart fetch < 2 s).
+
 ### B8. Gate 0 checklist (do these in the first hour)
 
 1. [x] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it. Cap 750 MiB (339 MB used empty, see B2). Forks: 34.8s `NOW`, 25.9s `LAST_SNAPSHOT`.

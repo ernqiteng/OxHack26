@@ -1,0 +1,20 @@
+# Live decision engine on the backend box: one 48-period batch a minute past every half hour.
+# Needs /opt/tempo/models/lgbm_{p10,p50,p90}.joblib (scripts/create_backend.py --deploy copies them).
+[Unit]
+Description=Tempo live decision engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tempo
+WorkingDirectory=/opt/tempo
+EnvironmentFile=/opt/tempo/.env
+ExecStart=/opt/tempo/.venv/bin/python scripts/decide.py
+Restart=always
+RestartSec=30
+StandardOutput=append:/var/log/tempo/decider.log
+StandardError=append:/var/log/tempo/decider.log
+
+[Install]
+WantedBy=multi-user.target

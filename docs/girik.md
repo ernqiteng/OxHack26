@@ -1,6 +1,10 @@
 # Part A: Data (Girik)
 
-Gate reached: _(write date/time here as you pass each gate)_
+Gate reached (Sat 24 Oct 2026, UTC):
+- **Gate 0** 15:18: schema with the hierarchical aggregates applied on local Docker and Tiger, contract test green.
+- **Gate 1** ~18:10: all six datasets for 2 years on Tiger (730/730 days each; NDF finished by Ernqi), aggregates refreshed (731 daily, 105 weekly), lookahead check 0.
+- **Gate 3 contribution** 18:56: `build_features` on main (330-390 ms on Tiger), per-column leak test and Option A vs B equivalence green with mutation checks, live poller running and writing to Tiger.
+- **Gate 4 contribution** ~19:30: compression stats and the two-year query measured (executes in 19 ms on Tiger). Exit "two-year chart instant" holds only if the chart reads `prices_daily` (0.65 s) rather than 35k half-hours (5 to 36 s over the network): see needs.md B7. That change is in Ayo's dashboard.
 
 You own everything between Elexon and the feature DataFrame. If your part is right, nobody downstream can accidentally use the future. If it is wrong, every number on the honesty panel is a lie, so your tests are the most adversarial in the repo.
 

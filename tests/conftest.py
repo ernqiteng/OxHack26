@@ -29,5 +29,7 @@ def db_conn():
         pytest.skip(f"local test DB not reachable ({exc}); run scripts/dev_db.sh")
     yield conn
     with conn.cursor() as cur:
-        cur.execute("TRUNCATE grid_raw, forecasts, decisions, battery_state, audits, backtest_results")
+        cur.execute(
+            "TRUNCATE grid_raw, forecasts, decisions, battery_state, audits, backtest_results, ingest_log"
+        )
     conn.close()
