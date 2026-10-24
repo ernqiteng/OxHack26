@@ -28,7 +28,9 @@ LABELS = {
 def summary(results: pd.DataFrame) -> pd.DataFrame:
     """One row per strategy: label, weeks, pnl_gbp, perfect_pnl_gbp, pct_of_perfect. Takes backtest_results rows."""
     totals = results.groupby("strategy").agg(
-        weeks=("week_start", "nunique"), pnl_gbp=("pnl_gbp", "sum"), perfect_pnl_gbp=("perfect_pnl_gbp", "sum")
+        weeks=("week_start", "nunique"),
+        pnl_gbp=("pnl_gbp", "sum"),
+        perfect_pnl_gbp=("perfect_pnl_gbp", "sum"),
     )
     totals["pct_of_perfect"] = [pct_of_perfect(r.pnl_gbp, r.perfect_pnl_gbp) for r in totals.itertuples()]
     order = [s for s in STRATEGY_ORDER if s in totals.index] + sorted(set(totals.index) - set(STRATEGY_ORDER))
@@ -43,13 +45,24 @@ def by_regime(results: pd.DataFrame) -> pd.DataFrame:
     for (strategy, regime), g in results.dropna(subset=["regime"]).groupby(["strategy", "regime"]):
         pnl, best = g.pnl_gbp.sum(), g.perfect_pnl_gbp.sum()
         rows.append(
-            {"strategy": strategy, "regime": regime, "weeks": g.week_start.nunique(), "pnl_gbp": pnl,
-             "perfect_pnl_gbp": best, "pct_of_perfect": pct_of_perfect(pnl, best)}
+            {
+                "strategy": strategy,
+                "regime": regime,
+                "weeks": g.week_start.nunique(),
+                "pnl_gbp": pnl,
+                "perfect_pnl_gbp": best,
+                "pct_of_perfect": pct_of_perfect(pnl, best),
+            }
         )
-    out = pd.DataFrame(rows, columns=["strategy", "regime", "weeks", "pnl_gbp", "perfect_pnl_gbp", "pct_of_perfect"])
+    out = pd.DataFrame(
+        rows, columns=["strategy", "regime", "weeks", "pnl_gbp", "perfect_pnl_gbp", "pct_of_perfect"]
+    )
     rank = {s: i for i, s in enumerate(STRATEGY_ORDER)}
-    return out.sort_values(["strategy", "regime"], key=lambda c: c.map(rank).fillna(len(rank)) if c.name == "strategy" else c,
-                           ignore_index=True)
+    return out.sort_values(
+        ["strategy", "regime"],
+        key=lambda c: c.map(rank).fillna(len(rank)) if c.name == "strategy" else c,
+        ignore_index=True,
+    )
 
 
 def calibration(forecasts: pd.DataFrame, actuals: pd.DataFrame, bins: int = 10) -> dict:
@@ -62,23 +75,38 @@ def calibration(forecasts: pd.DataFrame, actuals: pd.DataFrame, bins: int = 10) 
                           quantile (an honest p10 has 10% of actuals below it)
         reliability       DataFrame by p50 decile: bin, n, mean_p50, mean_actual, coverage, for the chart
     """
-    joined = forecasts.merge(actuals.rename(columns={"bucket": "target_time", "price": "actual"}), on="target_time")
+    joined = forecasts.merge(
+        actuals.rename(columns={"bucket": "target_time", "price": "actual"}), on="target_time"
+    )
     joined = joined.dropna(subset=["p10", "p50", "p90", "actual"])
     n = len(joined)
-    empty = {"n": 0, "coverage_p10_p90": None,
-             "quantiles": pd.DataFrame(columns=["quantile", "nominal", "observed"]),
-             "reliability": pd.DataFrame(columns=["bin", "n", "mean_p50", "mean_actual", "coverage"])}
+    empty = {
+        "n": 0,
+        "coverage_p10_p90": None,
+        "quantiles": pd.DataFrame(columns=["quantile", "nominal", "observed"]),
+        "reliability": pd.DataFrame(columns=["bin", "n", "mean_p50", "mean_actual", "coverage"]),
+    }
     if n == 0:
         return empty
     inside = (joined.actual >= joined.p10) & (joined.actual <= joined.p90)
     quantiles = pd.DataFrame(
-        {"quantile": ["p10", "p50", "p90"], "nominal": [0.1, 0.5, 0.9],
-         "observed": [(joined.actual <= joined[q]).mean() for q in ("p10", "p50", "p90")]}
+        {
+            "quantile": ["p10", "p50", "p90"],
+            "nominal": [0.1, 0.5, 0.9],
+            "observed": [(joined.actual <= joined[q]).mean() for q in ("p10", "p50", "p90")],
+        }
     )
-    joined = joined.assign(inside=inside, bin=pd.qcut(joined.p50.rank(method="first"), min(bins, n), labels=False))
+    joined = joined.assign(
+        inside=inside, bin=pd.qcut(joined.p50.rank(method="first"), min(bins, n), labels=False)
+    )
     reliability = (
         joined.groupby("bin")
-        .agg(n=("actual", "size"), mean_p50=("p50", "mean"), mean_actual=("actual", "mean"), coverage=("inside", "mean"))
+        .agg(
+            n=("actual", "size"),
+            mean_p50=("p50", "mean"),
+            mean_actual=("actual", "mean"),
+            coverage=("inside", "mean"),
+        )
         .reset_index()
     )
     return {"n": n, "coverage_p10_p90": inside.mean(), "quantiles": quantiles, "reliability": reliability}
@@ -122,7 +150,9 @@ def weak_statements(results: pd.DataFrame, close: float = 0.7, regime_gap_points
                 continue
             ratio = df[df.strategy == base].pnl_gbp.sum() / main_pnl
             if ratio > 1:
-                lines.append(f"{name(base)} beats {name(main)} on {scope}: it makes {ratio:.0%} of {name(main)}'s profit.")
+                lines.append(
+                    f"{name(base)} beats {name(main)} on {scope}: it makes {ratio:.0%} of {name(main)}'s profit."
+                )
             elif ratio >= close:
                 lines.append(f"{name(base)} reaches {ratio:.0%} of {name(main)}'s profit on {scope}.")
 
@@ -137,5 +167,7 @@ def weak_statements(results: pd.DataFrame, close: float = 0.7, regime_gap_points
     if len(weeks) >= 2:
         worst = weeks.loc[weeks.pct_of_perfect.idxmin()]
         regime = f" ({worst.regime})" if isinstance(worst.regime, str) else ""
-        lines.append(f"Weakest week for {name(main)}: week of {worst.week_start}{regime}, {worst.pct_of_perfect:.0f}% of perfect.")
+        lines.append(
+            f"Weakest week for {name(main)}: week of {worst.week_start}{regime}, {worst.pct_of_perfect:.0f}% of perfect."
+        )
     return lines

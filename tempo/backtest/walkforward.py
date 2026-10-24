@@ -52,7 +52,9 @@ def prices_hh_from_grid_raw(grid: pd.DataFrame) -> pd.DataFrame:
     """The prices_hh view (bucket, price) built from grid_raw-format rows, e.g. the synthetic fixture."""
     mid = grid[(grid.dataset == "MID") & (grid.series == "APXMIDP")]
     out = mid.groupby("start_time", as_index=False).value.mean()
-    return out.rename(columns={"start_time": "bucket", "value": "price"}).sort_values("bucket", ignore_index=True)
+    return out.rename(columns={"start_time": "bucket", "value": "price"}).sort_values(
+        "bucket", ignore_index=True
+    )
 
 
 # --- strategies ----------------------------------------------------------------
@@ -61,7 +63,11 @@ def prices_hh_from_grid_raw(grid: pd.DataFrame) -> pd.DataFrame:
 def simple_rule(train_df: pd.DataFrame, test_df: pd.DataFrame, battery: Battery) -> np.ndarray:
     """Charge 01:00 to 05:00, discharge 17:00 to 19:00, UK local time, every day."""
     hour = test_df.bucket.dt.tz_convert(UK).dt.hour.to_numpy()
-    return np.where((hour >= 1) & (hour < 5), battery.power_mw, np.where((hour >= 17) & (hour < 19), -battery.power_mw, 0.0))
+    return np.where(
+        (hour >= 1) & (hour < 5),
+        battery.power_mw,
+        np.where((hour >= 17) & (hour < 19), -battery.power_mw, 0.0),
+    )
 
 
 def persistence_greedy(train_df: pd.DataFrame, test_df: pd.DataFrame, battery: Battery) -> np.ndarray:
@@ -123,7 +129,10 @@ def run_strategy(
     regimes = regimes or {}
     rows = []
     for w in windows:
-        train_df, test_df = _slice(prices_hh, w.train_start, w.train_end), _slice(prices_hh, w.test_start, w.test_end)
+        train_df, test_df = (
+            _slice(prices_hh, w.train_start, w.train_end),
+            _slice(prices_hh, w.test_start, w.test_end),
+        )
         prices = test_df.price.to_numpy()
         pnl = simulate(battery, strategy_fn(train_df, test_df, battery), prices).pnl_gbp
         best = simulate(battery, perfect(train_df, test_df, battery), prices).pnl_gbp
@@ -151,6 +160,7 @@ def weekly_regimes(grid: pd.DataFrame, windows) -> dict:
     """'windy' if the week's mean wind share of demand (WINDFOR / NDF) is above the median week, else 'calm'.
     If NDF does not cover every test week, the whole run uses mean WINDFOR MW instead, so one run has one
     definition. Uses the latest published forecast for each start_time. Keyed by test week start date."""
+
     def latest(dataset):
         rows = grid[grid.dataset == dataset].sort_values("available_at")
         return rows.groupby("start_time").value.last()

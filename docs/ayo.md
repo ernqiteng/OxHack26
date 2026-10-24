@@ -1,6 +1,6 @@
 # Part C: Stage (Ayo)
 
-Gate reached: _(write date/time here as you pass each gate)_
+Gate reached: **Gate 2** Sat 24 Oct 2026 19:12 BST (dashboard on the backend box at http://136.244.77.120:8501 showing Girik's live settlement period and two years of prices and Ernqi's real backtest table; screenshots in [screenshots/](screenshots/)). In-process audit works on synthetic decisions. Fork audit on Tiger + five Vultr workers verified from the test suite the same evening.
 
 You own everything the judges see and everything that spins up on demand: Tiger forks, Vultr workers, the timing-audit orchestration, the dashboard and the demo itself. Your part has the highest on-stage risk, so your tests focus on equivalence (the fancy path gives the same answer as the simple path) and on failure handling (one worker dying must not kill the view).
 

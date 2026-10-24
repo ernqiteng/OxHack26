@@ -101,6 +101,18 @@ class SyntheticSource:
     def run_audit(self, decision_id: int) -> pd.DataFrame:
         return self.audit_rows(decision_id)
 
+    def start_fork_audit(self, decision_id: int):
+        from tempo.dashboard.jobs import CompletedJob
+
+        rows = self.audit_rows(decision_id)
+        rows["mode"] = "fork"
+        rows["fork_service_id"] = "synthetic"
+        rows["worker_id"] = [f"local-{k}" for k in range(1, len(rows) + 1)]
+        job = CompletedJob(decision_id, rows, note="synthetic data: no fork was taken")
+        job.progress.emit(None, "info", "synthetic source: no Tiger fork taken, numbers are made up")
+        job.progress.emit(None, "finished", "5/5 done")
+        return job
+
     # Live tab ---------------------------------------------------------------------------------
     def recent_prices(self, hours: int = 24) -> pd.DataFrame:
         start = period_start(self.now) - timedelta(hours=hours)
@@ -238,6 +250,9 @@ class SyntheticSource:
                 "pct_of_perfect": [round(100 * totals[s] / perfect, 1) for s in STRATEGIES],
             }
         )
+
+    def backtest_weeks(self) -> int | None:
+        return 12
 
     def backtest_by_regime(self) -> pd.DataFrame:
         rows = []
@@ -408,9 +423,12 @@ class DbSource:
 
     # -- Timing audit tab -------------------------------------------------------------------------
     def recent_decisions(self, limit: int = 20) -> pd.DataFrame:
+        # run_id 'selftest' is the rehearsal batch from scripts/seed_selftest.py, shown labelled so the fork
+        # audit can be clicked before the live decision engine exists. demo_reset warns if it is still there.
         sql = (
             "SELECT decision_id, decided_at, target_time, action, mw, reason, run_id FROM decisions "
-            "WHERE run_id = 'live' ORDER BY decided_at DESC, target_time LIMIT %s"
+            "WHERE run_id IN ('live', 'selftest') AND action <> 'hold' "
+            "ORDER BY (run_id = 'live') DESC, decided_at DESC, target_time LIMIT %s"
         )
         df = self._try(
             "recent_decisions",
@@ -428,6 +446,34 @@ class DbSource:
 
         rows = run_audit(self.conn, decision_id, mode="inprocess")
         return pd.DataFrame([{**r.__dict__} for r in rows])
+
+    def start_fork_audit(self, decision_id: int):
+        """Fork audit in a background thread with its own connection; the page polls the returned job."""
+        if self._decisions_synthetic:
+            return self.fallback.start_fork_audit(decision_id)
+        from tempo.dashboard.jobs import AuditJob
+
+        def connect():
+            import psycopg
+
+            if self.url:
+                return psycopg.connect(self.url, connect_timeout=10, autocommit=True)
+            return self.conn  # tests pass a bare connection; AuditJob will not close a shared one
+
+        if not self.url:
+            # Shared connection: wrap so the job's close() is a no-op.
+            class _Shared:
+                def __init__(self, conn):
+                    self._c = conn
+
+                def __getattr__(self, item):
+                    return getattr(self._c, item)
+
+                def close(self):
+                    pass
+
+            return AuditJob(decision_id, conn_factory=lambda: _Shared(self.conn))
+        return AuditJob(decision_id, conn_factory=connect)
 
     def self_grade(self) -> dict:
         """Ernqi's self_grade returns pct_within_one_period as a 0..1 fraction and None when no cycle has
@@ -471,6 +517,15 @@ class DbSource:
         return self._try(
             "backtest_summary", fetch, self.fallback.backtest_summary, empty_note="backtest_results is empty"
         )
+
+    def backtest_weeks(self) -> int | None:
+        sql = f"SELECT count(DISTINCT week_start) FROM backtest_results WHERE run_id = {self._LATEST_RUN}"
+
+        def fetch():
+            n = int(self._cached(("weeks",), lambda: self._df(sql)).iloc[0, 0] or 0)
+            return n or None
+
+        return self._try("backtest_weeks", fetch, self.fallback.backtest_weeks, empty_note="no backtest rows")
 
     def backtest_by_regime(self) -> pd.DataFrame:
         sql = (

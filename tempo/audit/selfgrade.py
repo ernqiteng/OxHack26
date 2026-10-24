@@ -74,5 +74,7 @@ def self_grade(conn, since: datetime, replay_shift=None) -> dict:
         from tempo.audit.shifts import replay_shift
     return grade_cycles(
         completed_cycle_ids(conn, since),
-        lambda decision_id, shift: replay_shift(conn, decision_id, shift, selfgrade_run_id(decision_id, shift)),
+        lambda decision_id, shift: replay_shift(
+            conn, decision_id, shift, selfgrade_run_id(decision_id, shift)
+        ),
     )

@@ -22,10 +22,12 @@ def days():
 
 def replay_for(days, late_by: dict[int, int]):
     """replay(cycle, shift): the cycle's plan, made late_by[cycle] periods late, then shifted, at actual prices."""
+
     def replay(cycle, shift):
         prices, plan = days[cycle]
         decided = shift_schedule(plan, late_by.get(cycle, 0))
         return simulate(Battery(), shift_schedule(decided, shift), prices).pnl_gbp
+
     return replay
 
 
@@ -71,7 +73,9 @@ def test_other_errors_are_not_swallowed(days):
 
 def test_no_cycles_gives_none():
     assert grade_cycles([], lambda c, s: 0.0) == {
-        "pct_within_one_period": None, "n_cycles": 0, "mean_cost_of_mistiming_gbp": None,
+        "pct_within_one_period": None,
+        "n_cycles": 0,
+        "mean_cost_of_mistiming_gbp": None,
     }
 
 

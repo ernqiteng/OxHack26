@@ -32,7 +32,7 @@ sudo -u tempo "$APP/.venv/bin/python" -c "import tempo.worker.main, tempo.audit.
 
 if [ "$ROLE" = worker ]; then
   if [ -n "${TEMPO_WORKER_TOKEN:-}" ]; then
-    umask 077; printf 'TEMPO_WORKER_TOKEN=%s\n' "$TEMPO_WORKER_TOKEN" > /etc/tempo/worker.env
+    (umask 077; printf 'TEMPO_WORKER_TOKEN=%s\n' "$TEMPO_WORKER_TOKEN" > /etc/tempo/worker.env)
     chown root:tempo /etc/tempo/worker.env; chmod 640 /etc/tempo/worker.env
   else
     echo "WARNING: no TEMPO_WORKER_TOKEN; /replay will accept anyone"
@@ -40,7 +40,7 @@ if [ "$ROLE" = worker ]; then
 fi
 
 if [ "$HAVE_SYSTEMD" = 1 ]; then
-  cp "$APP"/deploy/systemd/*.service /etc/systemd/system/
+  install -m 644 "$APP"/deploy/systemd/*.service /etc/systemd/system/
   systemctl daemon-reload
   if [ "$ROLE" = worker ]; then
     systemctl enable --now tempo-worker
@@ -52,4 +52,7 @@ if [ "$HAVE_SYSTEMD" = 1 ]; then
     ufw --force enable >/dev/null
   fi
 fi
+# Flush to disk: a block-level snapshot taken seconds after this can otherwise capture zero-byte unit
+# and env files (ext4 delayed allocation), which left the first worker image with a masked service.
+sync
 echo "bootstrap done (role=$ROLE, systemd=$HAVE_SYSTEMD)"

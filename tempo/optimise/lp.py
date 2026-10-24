@@ -30,7 +30,11 @@ class LPOptimiser:
     def plan(self, quantiles: pd.DataFrame, battery: Battery) -> pd.DataFrame:
         times = quantiles.index
         p50 = quantiles["p50"].to_numpy(float)
-        buy, sell = (quantiles["p90"].to_numpy(float), quantiles["p10"].to_numpy(float)) if self.conservative else (p50, p50)
+        buy, sell = (
+            (quantiles["p90"].to_numpy(float), quantiles["p10"].to_numpy(float))
+            if self.conservative
+            else (p50, p50)
+        )
 
         c, d = _solve(buy, battery, exclusive=False, sell=sell)
         if np.minimum(c, d).max() > EPS:
@@ -51,10 +55,14 @@ class LPOptimiser:
         drawn = np.where(mw < 0, -mw * 0.5 / s, 0.0)
         soc_after = simulate(battery, mw, p50).soc_path
         for k in np.flatnonzero(mw == 0):
-            spread[k], reason[k] = GreedyOptimiser._hold_reason(k, buy, stored, drawn, soc_after, battery, times)
+            spread[k], reason[k] = GreedyOptimiser._hold_reason(
+                k, buy, stored, drawn, soc_after, battery, times
+            )
 
         action = np.where(mw > 0, "charge", np.where(mw < 0, "discharge", "hold"))
-        return pd.DataFrame({"action": action, "mw": mw, "expected_spread": spread, "reason": reason}, index=times)
+        return pd.DataFrame(
+            {"action": action, "mw": mw, "expected_spread": spread, "reason": reason}, index=times
+        )
 
     @staticmethod
     def _cycles(mw, buy, sell, battery):
@@ -77,7 +85,12 @@ class LPOptimiser:
             sell_price = np.average(sell[sells], weights=-mw[sells])
             if not charges:
                 wear = battery.cycle_cost_gbp / battery.capacity_mwh
-                yield sells, sell_price > wear, np.nan, f"selling stored energy at {sell_price:.2f} > wear {wear:.2f}/MWh"
+                yield (
+                    sells,
+                    sell_price > wear,
+                    np.nan,
+                    f"selling stored energy at {sell_price:.2f} > wear {wear:.2f}/MWh",
+                )
                 continue
             buy_price = np.average(buy[charges], weights=mw[charges])
             ok, cycle_spread, gate_reason = cost_gate(buy_price, sell_price, battery)

@@ -143,3 +143,49 @@ def test_local_pool_sends_token_from_env(monkeypatch):
     result = run_all(pool, [0])[0]
     assert isinstance(result, WorkerError) and "cannot connect" in str(result)  # past auth, fails on DSN
     assert pool.headers == {"Authorization": "Bearer env-token"}
+
+
+def test_pool_from_urls_parses_labels_and_bare_urls():
+    from tempo.audit.pool import pool_from_urls
+
+    pool = pool_from_urls("tempo-worker-1=http://1.1.1.1:8000, http://2.2.2.2:8000/", token="t")
+    assert [(w.worker_id, w.base_url) for w in pool.workers] == [
+        ("tempo-worker-1", "http://1.1.1.1:8000"),
+        ("worker-2", "http://2.2.2.2:8000"),
+    ]
+    assert pool.headers == {"Authorization": "Bearer t"}
+
+
+def test_default_pool_falls_back_to_urls_when_vultr_refuses(monkeypatch):
+    import tempo.audit.pool as pool_mod
+    from tempo.config import settings
+    from tempo.infra.vultr import VultrError
+
+    monkeypatch.setenv("VULTR_API_KEY", "k")
+    monkeypatch.setenv("TEMPO_WORKER_URLS", "tempo-worker-1=http://1.1.1.1:8000")
+    settings.cache_clear()
+
+    class RefusingVultr:
+        def __init__(self, *a, **k):
+            pass
+
+        @classmethod
+        def from_env(cls, **k):
+            return cls()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+        def list_workers(self):
+            raise VultrError("GET /instances -> 401: Unauthorized IP address")
+
+    import tempo.infra.vultr as vultr_mod
+
+    monkeypatch.setattr(vultr_mod, "VultrClient", RefusingVultr)
+    pool, note = pool_mod.default_pool()
+    assert [w.worker_id for w in pool.workers] == ["tempo-worker-1"]
+    assert "TEMPO_WORKER_URLS" in note and "Unauthorized" in note
+    settings.cache_clear()

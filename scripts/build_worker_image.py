@@ -124,7 +124,19 @@ def main() -> int:
         check_worker(inst.main_ip, token)
         step(t0, "worker healthy from this laptop, token enforced")
 
+        # Verify what the snapshot will contain, then flush: unit files and worker.env must be on disk,
+        # not just in the page cache, or the restored instances boot with a masked service.
         ssh(inst.main_ip, priv, "systemctl is-enabled tempo-worker && cloud-init clean --logs || true")
+        sizes = ssh(
+            inst.main_ip,
+            priv,
+            "sync; sleep 5; sync; "
+            "stat -c '%n %s' /etc/systemd/system/tempo-worker.service /etc/tempo/worker.env",
+        )
+        assert all(int(line.split()[-1]) > 0 for line in sizes.strip().splitlines()), (
+            f"empty files on disk: {sizes}"
+        )
+        step(t0, "files flushed to disk, taking the snapshot")
         snap = vultr.create_snapshot(inst.instance_id, f"tempo-worker {time.strftime('%Y-%m-%d %H:%M')}")
         step(t0, f"snapshot {snap['id']} started, waiting for it to complete")
         deadline = time.monotonic() + 1800

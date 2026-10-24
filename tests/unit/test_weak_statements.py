@@ -18,8 +18,17 @@ def results(pnl: dict, perfect=None):
     rows = []
     for strategy, (calm, windy) in pnl.items():
         for week, regime, p, best in ((CALM, "calm", calm, perfect[0]), (WINDY, "windy", windy, perfect[1])):
-            rows.append({"run_id": "t", "week_start": week, "strategy": strategy, "pnl_gbp": p,
-                         "perfect_pnl_gbp": best, "pct_of_perfect": 100 * p / best, "regime": regime})
+            rows.append(
+                {
+                    "run_id": "t",
+                    "week_start": week,
+                    "strategy": strategy,
+                    "pnl_gbp": p,
+                    "perfect_pnl_gbp": best,
+                    "pct_of_perfect": 100 * p / best,
+                    "regime": regime,
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -27,12 +36,14 @@ def results(pnl: dict, perfect=None):
 def known():
     # Tempo: calm 100 (50% of perfect), windy 300 (75%). Simple rule: calm 71, windy 120.
     # Persistence: calm 105, windy 150.
-    return results({
-        "simple_rule": (71.0, 120.0),
-        "persistence_greedy": (105.0, 150.0),
-        "tempo": (100.0, 300.0),
-        "perfect": (200.0, 400.0),
-    })
+    return results(
+        {
+            "simple_rule": (71.0, 120.0),
+            "persistence_greedy": (105.0, 150.0),
+            "tempo": (100.0, 300.0),
+            "perfect": (200.0, 400.0),
+        }
+    )
 
 
 def test_close_baseline_sentence(known):
@@ -50,7 +61,9 @@ def test_far_baselines_not_mentioned(known):
 
 
 def test_regime_gap_sentence(known):
-    assert "Tempo captures 75% of perfect on windy weeks but only 50% on calm weeks." in weak_statements(known)
+    assert "Tempo captures 75% of perfect on windy weeks but only 50% on calm weeks." in weak_statements(
+        known
+    )
 
 
 def test_weakest_week_sentence(known):
@@ -76,7 +89,12 @@ def test_by_regime_by_hand(known):
     assert t.loc[("tempo", "calm"), "pct_of_perfect"] == pytest.approx(50.0)
     assert t.loc[("tempo", "windy"), "pct_of_perfect"] == pytest.approx(75.0)
     assert t.loc[("simple_rule", "calm"), "pnl_gbp"] == 71.0
-    assert list(by_regime(known).strategy.unique()) == ["simple_rule", "persistence_greedy", "tempo", "perfect"]
+    assert list(by_regime(known).strategy.unique()) == [
+        "simple_rule",
+        "persistence_greedy",
+        "tempo",
+        "perfect",
+    ]
 
 
 def test_calibration_of_an_honest_band():

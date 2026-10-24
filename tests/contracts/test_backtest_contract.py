@@ -31,7 +31,12 @@ def schema_columns(table: str) -> dict[str, str]:
 def results():
     grid = make_synthetic_market()
     start = pd.Timestamp("2026-01-05", tz="UTC")
-    return run_all(prices_hh_from_grid_raw(grid), grid, make_windows(start, start + pd.Timedelta(days=60)), run_id="contract")
+    return run_all(
+        prices_hh_from_grid_raw(grid),
+        grid,
+        make_windows(start, start + pd.Timedelta(days=60)),
+        run_id="contract",
+    )
 
 
 def test_columns_match_schema(results):

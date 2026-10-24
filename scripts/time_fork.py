@@ -8,6 +8,7 @@ Usage:
 Reads TIGERDATA_PROJECT_ID, TIGERDATA_ACCESS_KEY, TIGERDATA_SECRET_KEY,
 TIGER_PRIMARY_SERVICE_ID from the environment or from .env in the repo root.
 """
+
 import base64
 import json
 import os

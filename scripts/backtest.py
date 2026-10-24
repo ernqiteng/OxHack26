@@ -96,19 +96,28 @@ def main(argv=None):
     end = prices_hh.bucket.max().floor("D")
     windows = list(make_windows(start, end, args.train_days, args.test_days))
     if not windows:
-        raise SystemExit(f"not enough data: {start.date()} to {end.date()} is shorter than one train + test window")
+        raise SystemExit(
+            f"not enough data: {start.date()} to {end.date()} is shorter than one train + test window"
+        )
     run_id = args.run_id or f"{source}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
-    print(f"{source}: {len(prices_hh)} half-hours, {start.date()} to {end.date()}, {len(windows)} test weeks, run_id {run_id}")
+    print(
+        f"{source}: {len(prices_hh)} half-hours, {start.date()} to {end.date()}, {len(windows)} test weeks, run_id {run_id}"
+    )
 
     results = run_all(prices_hh, grid, windows, run_id)
     weekly = results.pivot(index=["week_start", "regime"], columns="strategy", values="pct_of_perfect")
     print("\n% of perfect by week\n" + weekly.round(1).to_string())
     table = summary(results)
-    print("\nHonesty table\n" + table.drop(columns="strategy").to_string(index=False, float_format=lambda x: f"{x:,.1f}"))
+    print(
+        "\nHonesty table\n"
+        + table.drop(columns="strategy").to_string(index=False, float_format=lambda x: f"{x:,.1f}")
+    )
 
     worst = results[results.pct_of_perfect > 100 + 1e-6]
     if len(worst):
-        print(f"\nWARNING: {len(worst)} week(s) beat perfect foresight. That is a lookahead leak, find it before trusting this.")
+        print(
+            f"\nWARNING: {len(worst)} week(s) beat perfect foresight. That is a lookahead leak, find it before trusting this."
+        )
 
     if args.write:
         print(f"\nwrote {write_results(conn, results)} rows to backtest_results")
