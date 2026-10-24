@@ -61,7 +61,7 @@ class LPOptimiser:
 
         spread = np.full(len(mw), np.nan)
         reason = [""] * len(mw)
-        for rows, ok, cycle_spread, gate_reason in self._cycles(mw, buy, sell, battery):
+        for rows, _ok, cycle_spread, gate_reason in self._cycles(mw, buy, sell, battery):
             for k in rows:
                 spread[k] = cycle_spread
                 verb = "charge" if mw[k] > 0 else "sell"

@@ -1,4 +1,5 @@
-"""Walk-forward backtest on the 60-day synthetic market: perfect is 100%, nothing beats it, known answers hold."""
+"""Walk-forward backtest on the 60-day synthetic market: perfect is 100%, nothing beats it, known answers
+hold."""
 
 import numpy as np
 import pandas as pd
@@ -8,8 +9,8 @@ from tempo.backtest.walkforward import (
     STRATEGIES,
     Window,
     make_windows,
-    persistence_greedy,
     pct_of_perfect,
+    persistence_greedy,
     prices_hh_from_grid_raw,
     run_all,
     run_strategy,
@@ -92,7 +93,8 @@ def test_persistence_greedy_uses_only_published_prices(prices_hh):
     ].reset_index(drop=True)
     base = persistence_greedy(train, test, Battery(soc_mwh=0.0))
 
-    # Scramble everything from 23:30 on the last training day onwards (published 00:40, after the first decision).
+    # Scramble everything from 23:30 on the last training day onwards (published 00:40, after the first
+    # decision).
     scrambled = test.copy()
     scrambled["price"] = np.random.default_rng(0).permutation(test.price.to_numpy())
     train_scrambled = train.copy()

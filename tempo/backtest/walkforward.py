@@ -71,7 +71,8 @@ def simple_rule(train_df: pd.DataFrame, test_df: pd.DataFrame, battery: Battery)
 
 
 def persistence_greedy(train_df: pd.DataFrame, test_df: pd.DataFrame, battery: Battery) -> np.ndarray:
-    """Each day at local midnight: forecast = same period yesterday, greedy plan, carry SoC to the next day."""
+    """Each day at local midnight: forecast = same period yesterday, greedy plan, carry SoC to the next
+    day."""
     history = pd.concat([train_df, test_df], ignore_index=True)
     published = history.set_index("bucket").price
     publish_time = published.index + pd.Timedelta(minutes=30) + MID_DELAY
@@ -279,7 +280,9 @@ def weekly_regimes(grid: pd.DataFrame, windows) -> dict:
     if not known:
         return {}
     median = np.median(known)
-    return {week: ("windy" if share > median else "calm") for week, share in shares.items() if pd.notna(share)}
+    return {
+        week: ("windy" if share > median else "calm") for week, share in shares.items() if pd.notna(share)
+    }
 
 
 def run_all(prices_hh, grid, windows, run_id, strategies=None, battery=None, frames=None) -> pd.DataFrame:

@@ -18,7 +18,7 @@ def test_windows_tile_without_overlap(days, train_days, test_days):
         assert w.train_end - w.train_start == pd.Timedelta(days=train_days)
         assert w.test_end - w.test_start == pd.Timedelta(days=test_days)
         assert w.train_start >= START and w.test_end <= end
-    for a, b in zip(windows, windows[1:]):
+    for a, b in zip(windows, windows[1:], strict=False):
         assert a.test_end == b.test_start  # contiguous, no gaps, no overlap
     if windows:
         assert windows[0].test_start == START + pd.Timedelta(days=train_days)

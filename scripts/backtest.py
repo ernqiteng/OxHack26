@@ -96,7 +96,8 @@ def main(argv=None):
         )
     run_id = args.run_id or f"{source}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     print(
-        f"{source}: {len(prices_hh)} half-hours, {start.date()} to {end.date()}, {len(windows)} test weeks, run_id {run_id}"
+        f"{source}: {len(prices_hh)} half-hours, {start.date()} to {end.date()}, "
+        f"{len(windows)} test weeks, run_id {run_id}"
     )
 
     results = run_all(prices_hh, grid, windows, run_id, frames=None if args.no_tempo else frames)
@@ -111,7 +112,8 @@ def main(argv=None):
     worst = results[results.pct_of_perfect > 100 + 1e-6]
     if len(worst):
         print(
-            f"\nWARNING: {len(worst)} week(s) beat perfect foresight. That is a lookahead leak, find it before trusting this."
+            f"\nWARNING: {len(worst)} week(s) beat perfect foresight. "
+            "That is a lookahead leak, find it before trusting this."
         )
 
     if args.write:
