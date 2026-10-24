@@ -64,7 +64,7 @@ This is the pipeline from raw market data to a committed battery action.
 - **Cadence:** 48 settlement periods a day, so new data arrives during the demo and the live view genuinely updates.
 - **History:** a bulk load of around two years of history for training and backtesting.
 
-Everything lands in **Tiger Data hypertables**. Every row is stamped with the time the data became *available*, not just the settlement period it *describes*. Elexon provides a publish time for the wind forecast, demand forecast, generation mix and system price, and we store it as-is. The Market Index Data price series carries no publish time, so for those rows we store a stated availability delay (period end plus a fixed number of minutes, shown on the honesty panel). This matters more than anything else in the data layer: it guarantees no lookahead. When Tempo makes a decision for 6pm, every feature it uses is built only from data that had actually been available at the moment the decision was made. A wind forecast released at 7pm cannot leak into a 6pm decision.
+Everything lands in **Tiger Data hypertables**. Every row is stamped with the time the data became *available*, not just the settlement period it *describes*. Elexon provides a publish time for the wind forecast, demand forecast, generation mix and system price, and we store it as-is. The Market Index Data price series carries no publish time, so for those rows we store a stated availability delay (period end plus a fixed number of minutes, shown on the honesty panel). The delay is deliberately cautious: Elexon sometimes publishes a period's price sooner, and Tempo still waits for the stated time. This matters more than anything else in the data layer: it guarantees no lookahead. When Tempo makes a decision for 6pm, every feature it uses is built only from data that had actually been available at the moment the decision was made. A wind forecast released at 7pm cannot leak into a 6pm decision.
 
 **Price series.** Tempo uses APX Market Index Data (the within-day exchange index) as its price. System price is published about 24 hours after the period it describes, so it cannot drive live decisions. The N2EX index has frequent zero-price, zero-volume rows. We assume the battery can transact at the APX index price for each period, and that assumption is stated on screen.
 
@@ -74,21 +74,20 @@ Features are built from **hierarchical continuous aggregates** at three timescal
 
 | Timescale | Examples |
 |---|---|
-| Half-hourly | Price at the same settlement period yesterday and last week, forecast wind as a share of demand (the wind forecast is hourly and is interpolated to settlement periods), time-of-day effects |
-| Daily | Rolling daily price spread (max minus min), daily mean, day-of-week effects |
-| Weekly | Weekly volatility, regime indicators (calm vs windy) |
+| Half-hourly | Price at the same settlement period yesterday and last week, forecast wind as a share of demand (the wind forecast is hourly and is forward-filled to settlement periods, never interpolated: interpolating 10:30 would need the 11:00 forecast, which may not be published yet at decision time), time-of-day effects |
+| Daily | Yesterday's daily price spread (max minus min), day-of-week and weekend effects |
+| Weekly | Last complete week's mean price and volatility |
 
 The same aggregates that feed the model also drive the dashboard charts, and they stay current automatically as new settlement periods arrive.
 
 #### Forecast
 
-The forecaster predicts the price for each of the next 48 settlement periods. It does not output a single number per period. It outputs three quantiles, **p10, p50 and p90**, so the system knows how confident it is. The decision layer uses that uncertainty: a wide band means a smaller expected edge, which can tip a marginal cycle into a hold.
+The forecaster predicts the price for each of the next 48 settlement periods. It does not output a single number per period. It outputs three quantiles, **p10, p50 and p90**, so the system knows how confident it is. The band is shown on the live view and tested for calibration. The decision itself uses p50: neither the live greedy rule nor the LP in the backtest lets the band change a decision. The LP has a conservative mode that buys at p90 and sells at p10, so that a wide band shrinks the expected edge and can tip a marginal cycle into a hold, but it is not switched on.
 
 We use a model ladder and climb it only as far as the data justifies, simplest first:
 
 1. **Persistence.** "The price at this half-hour will be the same as yesterday." This is the baseline every real model has to beat.
-2. **LightGBM.** Gradient-boosted trees. Strong on tabular data, fast to train, and the model most likely to do the job.
-3. **Small neural net**, trained on Vultr. Kept only if it beats LightGBM on unseen weeks. If it does not, we say so on screen.
+2. **LightGBM.** Gradient-boosted trees. Strong on tabular data, fast to train, and the model that does the job.
 
 #### Decision
 
@@ -125,7 +124,7 @@ Click any decision on the dashboard and Tempo:
 
 The same shift analysis also runs automatically on every completed charge-discharge cycle, as in-process backtest shifts rather than a fork, which gives Tempo a running self-grade. Forks are reserved for the on-stage audit:
 
-> "Tempo's timing was within one settlement period of hindsight-optimal on 100% of its 8 completed cycles so far; mistiming cost £0.51 a cycle on average."
+> "Tempo's timing was within one settlement period of hindsight-optimal on 7 of its 8 completed cycles so far (88%); mistiming cost £6.37 a cycle on average."
 
 That line is the product's own honest scorecard on the one thing it exists to do: choosing *when*. Eight cycles is a small sample (live decisions started on 21 Oct 2026), and the dashboard shows the count next to the percentage.
 
@@ -155,9 +154,9 @@ Raw pounds vary wildly between a calm week and a volatile one. A system can make
 
 #### Also on screen
 
-- **Calibration.** The p10–p90 band is an 80% interval, so it should contain about 80% of real prices. On 390 settled live forecasts it holds 77%: slightly overconfident, and the dashboard says so. Trades use the p50 forecast only, so the band's width never changes a decision; it is shown so a judge can see how honest the uncertainty is.
-- **Regime breakdown.** Performance split into calm weeks vs windy, volatile weeks. Prediction tends to matter far more in the second.
-- **Where it's weak.** If LightGBM ties the neural net, we show that. If the simple rule nearly matches Tempo in summer, when spreads are small, we show that too. The point of the panel is that a judge can see the limits without having to ask.
+- **Calibration.** The p10–p90 band is an 80% interval, so it should contain about 80% of real prices. On 405 settled live forecasts it holds 40%: the band is much too narrow, the model is overconfident, and the dashboard says so. Trades use the p50 forecast only, so the band's width never changes a decision; it is shown so a judge can see how honest the uncertainty is.
+- **Regime breakdown.** Performance split into calm weeks vs windy weeks. We expected prediction to matter more in windy weeks; over our 100 unseen weeks it did not: Tempo's lead over persistence is 16 points on calm weeks and 12 on windy ones, and the panel shows that.
+- **Where it's weak.** If the simple rule nearly matches Tempo in summer, when spreads are small, we show that too. The point of the panel is that a judge can see the limits without having to ask.
 
 ---
 
@@ -173,7 +172,7 @@ hierarchical continuous aggregates (half-hourly → daily → weekly)
         │
 feature pipeline (only data available before decision time)
         │
-forecaster on Vultr  → 48-period price quantiles (p10 / p50 / p90)
+forecaster on the Vultr backend box  → 48-period price quantiles (p10 / p50 / p90)
         │
 battery optimiser (greedy live; cvxpy LP as a backtest row), cost-gated: charge / discharge / hold
         │
@@ -203,20 +202,20 @@ honesty dashboard             timing audit
 - **Hypertables** for the grid data stream and the decisions log. Time-series storage that is built for exactly this shape of data: a high-frequency append-only stream queried by time range.
 - **Free service as the primary database.** Free services use copy-on-write storage, which is what makes forks zero-copy and fast enough to create on a click.
 - **Hierarchical continuous aggregates** for multi-timescale features and live dashboard charts. The half-hourly, daily and weekly rollups update themselves as new data arrives.
-- **Compression** on two years of history, shown on screen ("X million rows, compressed Y%"), with a two-year query returning instantly.
+- **Compression** on two years of history, shown on screen ("X million rows, compressed Y%"), with a two-year query that executes in about 20 ms on Tiger (fetching all 35,000 half-hours to a laptop takes seconds, so the two-year chart draws from the daily aggregate).
 - **Zero-copy forks** as the timing-audit engine. The what-if timelines need a writable copy of the live database, frozen at the moment of the click, that they can scribble on without touching live. Nothing in Layer 2 works without it.
 
 Take Tiger Data away and both the feature pipeline and the signature mechanic go with it.
 
 ### Vultr
 
-- **Parallel replay workers** for the timing audit, provisioned via the Vultr API. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
-- **Parallel walk-forward backtests**, with a reported speed-up over running them in sequence.
-- **Model training** on CPU workers. GPU plans are not available to this account (every Vultr GPU plan reports no locations, checked via the API), so the neural net, if it earns its place, trains on CPU and we say so.
-- **Battery-size sweep** (stretch): re-running the backtest across different battery capacities is a naturally parallel workload.
-- **Backend and dashboard hosting**, the least interesting part.
+- **Parallel replay workers** for the timing audit: five instances (`tempo-worker-1..5`, `vc2-1c-1gb` in `ewr`, next to Tiger's `us-east-1`), created from one snapshot through the Vultr API and kept running all day. A click sends each one a timeline over HTTP. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
+- **Backend box** (`tempo-backend`, `vc2-1c-2gb` in `lhr`): hosts the dashboard and runs the price poller and the live decider (forecast plus greedy optimiser) every half hour.
+- **If time allows, not built:** parallel walk-forward backtests on the workers with a measured speed-up, and a battery-size sweep. See [time.md](time.md).
 
-The timing audit doesn't happen without Vultr compute provisioned on demand.
+The workers are pre-warmed rather than created on the click, because a new instance takes about 40 s to boot and 80 s to accept SSH. The click still calls the Vultr API to find the tagged workers. Without them the audit falls back to the same replay run in-process, which is not the parallel story.
+
+Model training is not a Vultr job. LightGBM trains on a laptop CPU in about 90 seconds, most of it fetching features from Tiger, and the model is then copied to the backend box. No GPU is used: gradient-boosted trees on tabular features do not need one. (The account's GPU access is unclear: on 24 Oct no GPU plan reported any location, but a short-lived A16 instance was later created on it. Either way, nothing in Tempo runs on a GPU.)
 
 ---
 
@@ -227,7 +226,7 @@ The timing audit doesn't happen without Vultr compute provisioned on demand.
 | 20s | Hook | "Electricity is cheap at 3am and expensive at 6pm. A battery can make money in between. The hard part is *when*." |
 | 35s | Live view | Current settlement period, next 24h forecast with uncertainty bands, today's schedule, and a recent hold with its reason: "expected spread didn't cover the 10% efficiency loss." |
 | 50s | Replay | Rewind to a windy week, play it forward: forecast vs reality, battery charging and selling, £ ticking up. |
-| 40s | Timing audit | Click a decision. Tiger forks the live database, five Vultr workers replay five timelines in it in parallel, side-by-side result: "an hour later would have cost £31." Then the running self-grade. While the fork spins up (~40 s), tell the challenge from section 11. |
+| 40s | Timing audit | Click a decision. Tiger forks the live database, five Vultr workers replay five timelines in it in parallel, side-by-side result: "an hour later would have cost £34.81" (decision #1353). Then the running self-grade. While the fork spins up (~40 s), tell the challenge from section 11. |
 | 30s | Honesty panel | Backtest table, % of perfect foresight, calibration, plain statement of where it's weak. If asked why the LP row beats the live Tempo row: "two points over a hundred weeks, simple first, it's one flag to switch." |
 | 5s | Close | "Most projects stop at a prediction. We turned it into a decision, and then proved whether we made it at the right time." |
 
@@ -252,9 +251,8 @@ Cut from the bottom if time runs out.
 ### Nice-to-have (cut first)
 
 7. `cvxpy` LP optimiser. Built, tested, and in the backtest as the Tempo LP row (68% vs greedy's 66%). Greedy stays live, see section 3.
-8. Neural net vs LightGBM comparison, trained on a Vultr CPU worker (no GPU on this account).
-9. Battery-size sweep and regime breakdown.
-10. pgvector "similar days" lookup, finding historical days whose shape matches today's forecast.
+8. Battery-size sweep (not built, see [time.md](time.md)). The regime breakdown, once in this group, is built and on the honesty panel.
+9. pgvector "similar days" lookup, finding historical days whose shape matches today's forecast.
 
 ---
 
@@ -264,7 +262,7 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 
 | Gate | Done when | Decisions made here |
 |---|---|---|
-| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU: checked, not available on this account, CPU only. Vultr instance limit checked. Who owns what. |
+| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU: checked, no GPU plan had a location on this account at the time, so CPU only. Vultr instance limit checked. Who owns what. |
 | **Gate 1: Data** | History loaded, live polling running, aggregates building | Confirm availability-time stamping on every row |
 | **Gate 2: Baseline demo** | Backtest table with simple rule, greedy + persistence, perfect foresight | Lookahead sanity check: only perfect foresight should "know" the future |
 | **Gate 3: Tempo decides** | LightGBM forecast feeding the cost gate, Tempo row in the table | |
@@ -286,7 +284,7 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 | Forks too slow on the day | Primary database is a free service (forks ready in 36 to 42 s in testing). If still slow, pre-create the fork before the demo and have the click dispatch workers into it, or switch the toggle to in-process ("same replay, run locally") |
 | Tiger free tier allows only 2 services | Audit uses one fork per click (section 11). Nobody creates other forks on demo day; `demo_reset.py` checks only the primary exists. The audit button is disabled while an audit runs |
 | Unfamiliar domain for judges | Open with the buy-low-sell-high line |
-| Vultr GPU not available (confirmed: no GPU plan has any location for this account) | Train on CPU, lean on parallel workers as the Vultr story, never say "GPU" on stage |
+| No GPU in the build (no GPU plan had a location on 24 Oct; an A16 instance was briefly created later but nothing ran on it) | Train on CPU, lean on parallel workers as the Vultr story, never say "GPU" on stage |
 
 ---
 
@@ -308,7 +306,7 @@ The track rewards decisions, not just predictions. HRT's own writing on AI in tr
 
 It also follows the research habits HRT writes about publicly:
 
-- **Simple first.** Prefer the simpler model if it's as good (HRT: *ML benchmarks*). The neural net stays only if it beats LightGBM. The greedy optimiser stays live because the LP's two-point gain over 100 weeks did not justify the swap; the LP sits on the honesty table as a row, not in production.
+- **Simple first.** Prefer the simpler model if it's as good (HRT: *ML benchmarks*). LightGBM is the forecaster: on tabular features, gradient-boosted trees are the right tool. The greedy optimiser stays live because the LP's two-point gain over 100 weeks did not justify the swap; the LP sits on the honesty table as a row, not in production.
 - **Don't fool yourself.** Low signal-to-noise domains make it easy to see edges that aren't there. We test only on unseen weeks against honest baselines.
 - **No lookahead.** Availability-time stamping on every row (HRT: *How HRT Thinks About Data*).
 
@@ -320,7 +318,7 @@ What sets it apart:
 
 ### Vultr
 
-Parallel workers that judges watch pick up timelines and return results, parallel walk-forward backtests with a reported speed-up, and model training. The timing audit doesn't happen without Vultr compute provisioned on demand.
+Parallel workers that judges watch pick up timelines and return results, and the backend box that hosts the dashboard and runs the decider every half hour. Five pre-warmed Vultr workers are what make the five timelines run in parallel on separate machines.
 
 ### Tiger Data
 

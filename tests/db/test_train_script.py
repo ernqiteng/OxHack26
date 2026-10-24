@@ -48,3 +48,21 @@ def test_train_cli_local(synthetic_month, tmp_path, monkeypatch):
         ["--db", "local", "--days", "10", "--every", "12", "--holdout-days", "2", "--out", str(tmp_path)]
     )
     assert rc == 0 and (tmp_path / "lgbm_p50.joblib").exists()
+
+
+def test_until_trains_only_on_prices_published_by_then(synthetic_month, tmp_path):
+    """--until: the last training target's price (start + 30 min + MID delay) is published by `until`, so a
+    model trained this way can make decisions dated from `until` on without having seen their outcomes."""
+    import pandas as pd
+
+    import scripts.train as train_script
+
+    until = pd.Timestamp(MONDAY + timedelta(days=20, hours=18))
+    meta = train_script.train(
+        synthetic_month, days=10, every_h=6, out=tmp_path, holdout_days=2, until=until, n_estimators=20
+    )
+    last_decision = pd.Timestamp(meta["window"][-1])
+    last_target_published = last_decision.floor("30min") + pd.Timedelta(hours=24, minutes=40)
+    assert last_target_published <= until
+    assert last_target_published > until - pd.Timedelta(hours=6)  # as late as the 6 h grid allows
+    assert meta["until"] == str(until.tz_convert("UTC"))

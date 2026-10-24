@@ -2,6 +2,8 @@
 
 One file with the idea, why it wins, and the research behind it. Read alongside `CLAUDE.md` and `docs/`.
 
+> **Superseded: pre-hackathon research, kept for reference.** This was written before the build. Several plans in it were not built or turned out differently, so do not quote it in the pitch. What Tempo actually does is in [docs/description.md](docs/description.md). In particular: **no GPU is used** (LightGBM trains on a laptop CPU, and there is no scenario generation); Vultr runs the five timing-audit workers and the backend box; and the p10–p90 band currently holds about 40% of real prices, not 80%.
+
 > **Naming and conflicts.** The research brief called the project **GridEdge** and the repo docs call it **Tempo**. They are the same idea: forecast GB electricity prices, then decide when a battery charges or discharges. Where this file and `docs/description.md`, `docs/plan.md` or `docs/needs.md` disagree (price series, optimiser, model choices, demo flow), **the `docs/` files win**, because the team froze the plan there. In particular, the docs use the Elexon MID (market index) price series, LightGBM quantile forecasts, greedy and LP optimisers, and the fork-based timing audit. Treat the "fancy" items below (thousands of scenarios, CVaR, diffusion) as optional upgrades.
 
 ---
@@ -23,7 +25,7 @@ The battery is virtual (say 10 MWh in the research brief; the real defaults are 
 ### The four steps
 1. **Collect the data (Tiger Data).** A script pulls prices, wind generation, demand and more from Elexon every few minutes and stores it in Tiger Data. We also load about two years of history. Tiger keeps automatic summary tables (half-hour, daily, weekly) that feed the model and dashboard instantly.
 2. **Predict a range, not one number.** Instead of "the price at 6pm will be £80", the model says "10% chance below £40, 50% below £80, 90% below £200". That is a **quantile forecast**. Prices are so unpredictable that a single guess misleads, and knowing how unsure you are is what makes a good decision possible.
-3. **(Optional upgrade) Imagine thousands of possible futures on a Vultr GPU.** From the range, generate a few thousand realistic price paths for the next 24 hours. This is the heavy compute that justifies the GPU.
+3. **(Optional upgrade) Imagine thousands of possible futures on a Vultr GPU.** From the range, generate a few thousand realistic price paths for the next 24 hours. This is the heavy compute that justifies the GPU. *(Not built.)*
 4. **Make the decision.** An optimiser asks which charge/discharge plan makes the most money while respecting the battery limits. Output example: "Next half hour: **discharge** at full power", or a **hold** with a readable reason.
 
 ### An analogy
@@ -47,13 +49,13 @@ We do all of it, and each part is visible:
 | Decision | "So: charge at 3am, sell at 6pm" |
 | Proof the decision is good | "Over 8 past weeks our battery made £X. The simple rule made £Y. So using our prediction earned Z% more." |
 
-The last row is the winning row. Quant firms ask one question all day: *did this prediction actually make money compared with doing something simple?* We answer it with a number in a fresh domain. HRT also talked about GPUs at the event, and our GPU does real work (training, scenario generation), not just hosting.
+The last row is the winning row. Quant firms ask one question all day: *did this prediction actually make money compared with doing something simple?* We answer it with a number in a fresh domain. HRT also talked about GPUs at the event, and our GPU does real work (training, scenario generation), not just hosting. *(Not built: no GPU is used.)*
 
 ### Tiger Data
 Built for data that arrives over time, and ours is literally a price every half hour plus years of history. We show: live data flowing in; a big number like "N million rows, compressed 90%+"; charts that load instantly because Tiger pre-calculates half-hourly and daily summaries; and database forking in the timing audit. That is their product used for exactly what it is designed for.
 
 ### Vultr
-The honest line: "the model trains on Vultr's GPU and the backend runs on Vultr", plus the worker pool that runs the audit replays. That is stronger than most entries, which just host a website. If GPU stock or credits fail, say so honestly and use CPU.
+The honest line: "the model trains on Vultr's GPU and the backend runs on Vultr", plus the worker pool that runs the audit replays. That is stronger than most entries, which just host a website. If GPU stock or credits fail, say so honestly and use CPU. *(Outcome: CPU. The model trains on a laptop; the backend and five audit workers run on Vultr.)*
 
 ---
 
@@ -63,7 +65,7 @@ The research brief's version (thousands of scenarios, risk-limited optimiser, ca
 
 | Part | Overcomplicated | Simple (do this first) |
 |---|---|---|
-| Prediction | Neural net giving a full range | **LightGBM** quantile model, plus a small neural net on the GPU to compare |
+| Prediction | A model giving a full range | **LightGBM** quantile model |
 | Decision | Optimiser over thousands of scenarios | **Greedy rule:** charge in the cheapest predicted periods, sell in the most expensive, with a cost gate |
 | Proof | Confidence intervals, calibration plots | **One table:** our money vs "same as yesterday" vs perfect knowledge |
 | Dashboard | React app | **Streamlit** |
@@ -201,7 +203,7 @@ Pick exact Elexon endpoint paths from the Swagger spec. Details and quirks for o
 ### #1 GridEdge / Tempo (chosen)
 **Pitch.** A live probabilistic forecaster of GB electricity prices that dispatches a virtual battery and shows its walk-forward P&L against honest baselines.
 
-**30-second judge pitch.** "Every half hour, Britain's grid settles a price that swings with wind. We stream Elexon data into Tiger Data, forecast the next periods as full distributions, run the optimiser on Vultr, and decide when a battery charges or discharges. On held-out weeks we beat persistence by £X, capture Y% of the perfect-foresight ceiling, and our 80% intervals cover 80% of outcomes. Here it is running live."
+**30-second judge pitch.** "Every half hour, Britain's grid settles a price that swings with wind. We stream Elexon data into Tiger Data, forecast the next periods as full distributions, run the optimiser on Vultr, and decide when a battery charges or discharges. On held-out weeks we beat persistence by £X, capture Y% of the perfect-foresight ceiling, and our 80% intervals cover 80% of outcomes. Here it is running live." *(Do not use the interval claim: the band holds about 40% of real prices, and the dashboard says so.)*
 
 **Why it wins HRT.** It mirrors Dunning's predict-then-optimise split. It is a low signal-to-noise, real-time, "one reality" market where honest walk-forward backtests and a perfect-foresight ceiling show rigour. Calibration tackles the "evaluation metric" problem HAIL's diffusion intern names. GPU scenario generation is literally "trading simulation workloads", the phrase in HRT's Lambda deal. It is a market but not a stock bot: fresh, and still in HRT's comfort zone (inference).
 
@@ -211,7 +213,7 @@ Pick exact Elexon endpoint paths from the Swagger spec. Details and quirks for o
 
 **Data and model (defensible choices).**
 - Data: Elexon prices, generation mix, demand, wind forecasts; NESO carbon intensity as an optional exogenous feature.
-- Models: (a) persistence baseline; (b) **LightGBM quantile regression**, fast, strong on tabular data, and HRT's "simplest model that works"; (c) stretch: small temporal neural net with pinball-loss quantile heads on GPU, plus a Gaussian-copula scenario generator (conditional diffusion as a further stretch, echoing HAIL). Keep the neural net only if it beats LightGBM on real weeks.
+- Models: (a) persistence baseline; (b) **LightGBM quantile regression**, fast, strong on tabular data, and HRT's "simplest model that works"; (c) stretch: a Gaussian-copula scenario generator.
 - Decision: greedy with cost gate first; LP (cvxpy/HiGHS) maximising mean scenario P&L, optionally with a CVaR penalty, subject to SoC, power and ~90% round-trip efficiency.
 
 **Architecture.** Elexon REST/IRIS poller → Tiger hypertables → caggs → point-in-time feature view → model (train on GPU, infer per period) → optimiser → `decisions` hypertable → Streamlit dashboard reading caggs and decisions.
@@ -222,14 +224,14 @@ Pick exact Elexon endpoint paths from the Swagger spec. Details and quirks for o
 |---|---|---|---|
 | H0-1 | Tiger signup, schema, hypertables | Vultr credit claim, GPU instance, CUDA check | Repo, skeleton, battery spec |
 | H1-4 | Elexon backfill + live poller | Persistence + LightGBM baselines | Perfect-foresight ceiling |
-| H4-8 | Caggs, columnstore policy, stats query | Neural quantile model on GPU; walk-forward harness | Dashboard: live price, cagg charts, compression panel |
+| H4-8 | Caggs, columnstore policy, stats query | LightGBM quantile model; walk-forward harness | Dashboard: live price, cagg charts, compression panel |
 | H8-12 | Feature view, leakage audit | Scenario generator; seed sweep | Stochastic LP; backtest loop |
 | H12-16 | Sleep shifts | Full walk-forward run | P&L curve, calibration plot |
 | H16-20 | Live poll hardening | Inference endpoint, latency numbers | Live "next decision" panel |
 | H20-22 | Freeze; record backup demo | Freeze model | Write-up, slides |
 | H22-24 | Rehearse x3 | Rehearse | Submit |
 
-**Fallbacks.** If Vultr GPU stock or credits fail, train on CPU and say so. If IRIS is flaky, poll REST. If the neural model loses, present LightGBM as the winner (still an HRT-friendly story).
+**Fallbacks.** If Vultr GPU stock or credits fail, train on CPU and say so. If IRIS is flaky, poll REST.
 
 **Risks and cut order.** Imbalance and market prices are spiky, so P&L can look bad; mitigate by reporting % of ceiling. Cut first: diffusion generator → CVaR → live IRIS (use polling) → React (use Streamlit).
 
@@ -238,7 +240,7 @@ Pick exact Elexon endpoint paths from the Swagger spec. Details and quirks for o
 - 0:30 Tiger panel: N million rows, compression ratio, full-history query time.
 - 1:00 Forecast fan chart for the next periods (GPU scenarios overlaid if built).
 - 1:30 Battery decision for the next period with its reason.
-- 2:00 Walk-forward table: persistence vs LightGBM vs neural; P&L, % of ceiling, calibration.
+- 2:00 Walk-forward table: persistence vs LightGBM; P&L, % of ceiling, calibration.
 - 2:40 "What we'd do with HRT's compute" close. (The repo's demo script adds the timing-audit fork demo; follow `docs/description.md` section 6.)
 
 **Scores (research brief):** HRT 9, Tiger 9, Vultr 8, Novelty 8, Feasibility 8, Wow 8 = 50/60 (52 if the diffusion stretch ships).
@@ -258,7 +260,7 @@ Forecasts per-page Wikipedia edit/revert bursts from the live recent-changes str
 **First steps (also covered in `docs/`):**
 1. **Accounts (one person, 15 min):** Tiger via mlh.link/tigerdata-quickstart ($1,000 credits for 30 days). Vultr via mlh.link/vultr-discover then mlh.link/vultr-signup then Billing → Gift Code ($100). Launch the cheapest GPU plan and run `nvidia-smi`.
 2. **Schema:** hypertable for prices, a half-hour cagg, columnstore enabled with a policy (already drafted in `tempo/db/schema.sql`).
-3. **Data:** pull one day from the Elexon price endpoint (no key), then write the backfill loop within rate limits, and fit persistence + LightGBM baselines before anyone touches a neural net.
+3. **Data:** pull one day from the Elexon price endpoint (no key), then write the backfill loop within rate limits, and fit persistence + LightGBM baselines before anything else.
 
 ---
 
