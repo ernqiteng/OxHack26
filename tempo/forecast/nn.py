@@ -83,8 +83,9 @@ class NNQuantileForecaster:
         dev = self._device(torch)
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
-        if dev == "cpu":
-            torch.use_deterministic_algorithms(True)
+        # Process-wide switch, so set it on every fit: deterministic on cpu; off on cuda, where cuBLAS would
+        # need CUBLAS_WORKSPACE_CONFIG (a cpu fit earlier in the process must not break a cuda fit).
+        torch.use_deterministic_algorithms(dev == "cpu")
         n_val = max(1, int(len(Xs) * VAL_FRACTION)) if len(Xs) >= 20 else 0
         X_t = torch.tensor(Xs, device=dev)
         y_t = torch.tensor(ys, device=dev).unsqueeze(1)
