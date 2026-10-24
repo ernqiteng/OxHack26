@@ -1,6 +1,8 @@
 # Part B: Brain (Ernqi)
 
 Gate reached: _(write date/time here as you pass each gate)_
+- Gate 0 (Phase 0): 2026-10-24, fixture and Battery contract merged to `main` (PR #5).
+- Gate 2 (Phase 1): 2026-10-24 16:30 UTC, see the note under Phase 1's exit.
 
 You own the battery, the optimiser, the forecaster, the walk-forward backtest and every honesty metric. Everything you produce is a number that a judge will read, so every number has a known-answer test behind it.
 
@@ -80,6 +82,16 @@ Fixture merged to `main`. Ayo and Girik can import it.
 ### Exit (Gate 2)
 
 Backtest table on real Tiger data for simple rule, persistence + greedy, perfect. Pass the results table to Ayo. **Lookahead sanity:** no strategy exceeds perfect on any week on real data. If one does, stop and find the leak with Girik.
+
+**Done 2026-10-24.** `python scripts/backtest.py --source db --write`, run_id `db-20261024T163014Z`, 300 rows in Tiger `backtest_results`: 100 unseen test weeks (28-day train, 7-day test) over APX MID 24 Oct 2024 to 24 Oct 2026 (35,018 half-hours, 23 missing in 7 small gaps).
+
+| Strategy | Money made | % of perfect |
+|---|---|---|
+| Simple rule | £29,265 | 33.1% |
+| Persistence + greedy | £46,798 | 52.9% |
+| Perfect foresight | £88,388 | 100% |
+
+Lookahead sanity: 0 of 300 rows above 100% (max exactly 100.0). Ayo's `DbSource.backtest_summary()` reads it. Not yet: `regime` is NULL because WINDFOR/NDF were not loaded at run time; re-run with a new run_id once they are, and the dashboard (latest run_id) picks it up. Note: `prices_hh`'s refresh policy only covers the last 3 days, so history needed a one-off `CALL refresh_continuous_aggregate('prices_hh', NULL, now() - interval '30 minutes')` after the backfill.
 
 ---
 
