@@ -152,18 +152,32 @@ def load_dataset(
     resume: bool = True,
     compress: bool = True,
     on_window: Callable[[str, datetime, datetime, int, int], None] | None = None,
+    max_storage_mb: float | None = None,
+    storage_fn: Callable[[], float] | None = None,
 ) -> LoadReport:
     """Load one dataset over [start, end) window by window. Resume skips windows already covered
-    (see window_covered); pass resume=False to force a reload, which upsert makes safe."""
+    (see window_covered); pass resume=False to force a reload, which upsert makes safe.
+
+    Storage is checked before every window and chunks are compressed after every window, so at most one
+    window's rows are ever uncompressed. Compressing only at the end of a dataset let 9 NDF windows
+    (~1.4M rows) pile up uncompressed on the 750 MB Tiger free service, which goes read-only at the cap."""
     spec = DATASETS[dataset]
     days = window_days or spec.bulk_window_days
     rep = LoadReport(dataset)
+    storage_fn = storage_fn or (lambda: storage_mb(conn))
     t0 = time.perf_counter()
     for s, e in chunk_range(start, end, days):
         rep.windows += 1
         if resume and window_covered(conn, dataset, s, e):
             rep.windows_skipped += 1
             continue
+        if max_storage_mb is not None:
+            used = storage_fn()
+            if used > max_storage_mb:
+                raise StorageLimitExceeded(
+                    f"{used:.0f} MB used > {max_storage_mb} MB limit; stopped before {dataset} "
+                    f"{s:%Y-%m-%d}..{e:%Y-%m-%d} (resume picks up here)"
+                )
         rows = client.fetch_window(dataset, s, e, bulk=True)
         df = normalise(dataset, rows)
         with conn.transaction():  # the upsert and its log row commit together, or not at all
@@ -171,10 +185,10 @@ def load_dataset(
             record_window(conn, dataset, s, e, len(df))
         rep.rows_fetched += len(df)
         rep.rows_inserted += inserted
+        if compress:
+            rep.chunks_compressed += compress_chunks(conn)
         if on_window:
             on_window(dataset, s, e, len(df), inserted)
-    if compress:
-        rep.chunks_compressed = compress_chunks(conn)
     rep.coverage = coverage(conn, dataset, start, end)
     if not rep.coverage.ok:
         log.warning(rep.coverage.summary())
@@ -196,21 +210,19 @@ def backfill(
     max_storage_mb: float | None = None,
     refresh: bool = True,
     report: Callable[[str], None] = log.info,
+    storage_fn: Callable[[], float] | None = None,
 ) -> list[LoadReport]:
-    """Load every dataset for [end - days, end). Compresses after each dataset, reports storage, and raises
-    StorageLimitExceeded before starting a dataset once storage is above max_storage_mb."""
+    """Load every dataset for [end - days, end). Compresses after each window, reports storage, and raises
+    StorageLimitExceeded before any window once storage_fn() (default pg_database_size; pass
+    tiger_storage_mb against Tiger) is above max_storage_mb.
+
+    Pass the same `end` as the original run when resuming: ingest_log keys on exact window bounds."""
     # Midnight-aligned windows: the per-day DISEBSP endpoint and Elexon's whole-day from/to semantics then
     # fetch each day exactly once. Today's partial day is the live poller's job (Phase 2).
     end = end or datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     start = end - timedelta(days=days)
     reports: list[LoadReport] = []
     for ds in datasets:
-        if max_storage_mb is not None:
-            used = storage_mb(conn)
-            if used > max_storage_mb:
-                raise StorageLimitExceeded(
-                    f"{used:.0f} MiB used > {max_storage_mb} MiB limit; not loading {ds}"
-                )
         rep = load_dataset(
             conn,
             client,
@@ -221,6 +233,8 @@ def backfill(
             resume=resume,
             compress=compress,
             on_window=lambda d, s, e, n, i: report(f"{d} {s:%Y-%m-%d}..{e:%Y-%m-%d}: {n} rows, {i} new"),
+            max_storage_mb=max_storage_mb,
+            storage_fn=storage_fn,
         )
         reports.append(rep)
         report(
@@ -238,9 +252,21 @@ def backfill(
 
 
 def lookahead_check(conn: psycopg.Connection) -> int:
-    """Rows of non-forecast datasets whose available_at is in the future. Must be 0 (docs/girik.md Gate 1)."""
+    """Rows that claim something impossible about time. Must be 0 (docs/girik.md Gate 1).
+
+    - INDO, FUELHH, DISEBSP: available_at is Elexon's own publish time, so one in the future is corrupt data.
+    - MID: available_at is our derived stamp (start + 30 + delay). Elexon publishes MID during the period
+      (seen live: the 18:30 period at 18:42), so for the in-progress period the stamp is legitimately after
+      now(); that is conservative, not a leak, and build_features ignores the row until then. What must not
+      exist is a MID price for a period that has not started.
+    - WINDFOR, NDF are forecasts: future start_time is their purpose, and their publishTime is checked by
+      the publish-time rule above only through the datasets listed there.
+    """
     (n,) = run_sql(
         conn,
-        "SELECT count(*) FROM grid_raw WHERE available_at > now() AND dataset NOT IN ('WINDFOR', 'NDF')",
+        "SELECT count(*) FROM grid_raw WHERE "
+        "(dataset IN ('INDO', 'FUELHH', 'DISEBSP') AND available_at > now()) "
+        "OR (dataset IN ('WINDFOR', 'NDF') AND available_at > now()) "
+        "OR (dataset = 'MID' AND start_time > now())",
     )[0]
     return n
