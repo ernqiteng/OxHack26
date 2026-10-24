@@ -53,7 +53,7 @@ def load_db(conn):
         grid["start_time"] = pd.to_datetime(grid.start_time, utc=True)
         grid["available_at"] = pd.to_datetime(grid.available_at, utc=True)
         grid["value"] = grid.value.astype(float)
-    return prices_hh, (grid if grid.dataset.nunique() == 2 else None)
+    return prices_hh, (grid if "WINDFOR" in set(grid.dataset) else None)
 
 
 def load_synthetic():

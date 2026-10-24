@@ -15,7 +15,7 @@ Status check against [ernqi.md](ernqi.md), done by reading main and Tiger, not b
 
 ## To do, in order
 
-1. **Re-run the backtest with regime labels (no Girik needed).** WINDFOR is now on Tiger for the whole two years, so `regime` no longer has to be NULL. New `run_id`; the dashboard picks up the latest automatically. The Honesty tab's regime chart is empty until this lands.
+1. ~~**Re-run the backtest with regime labels.**~~ Done: run `db-20261024T181359Z`, all 300 rows labelled by wind share of demand (NDF backfilled to the full two years first). Tell Ayo.
 2. **`tempo/forecast/lgbm.py::LightGBMQuantileForecaster` (no Girik needed to write it).** Test it on the synthetic fixture's columns for now; wire to `build_features` columns when they exist. Tests: `test_quantile_order.py`, `test_lgbm_beats_persistence.py` with `seed=0, deterministic=True, num_threads=1`.
 3. **`tempo/forecast/dataset.py::make_training_set`** and **`tests/db/test_no_lookahead_training.py`** (needs `build_features`).
 4. **`tempo/decide/engine.py::run_decision`** and **`tests/db/test_run_decision.py`** and the shared **`tests/contracts/test_decisions_contract.py`** (needs `build_features`). This is the single most important missing piece for the demo: without it there are no live decisions, so the Live tab shows an empty schedule and the timing audit has nothing real to click. Ayo's audit expects exactly what ernqi.md says: 48 rows per batch, same `decided_at`, `run_id='live'`, signed `mw`, a `reason` on every hold.
