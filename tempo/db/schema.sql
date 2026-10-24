@@ -21,7 +21,61 @@ SELECT create_hypertable('grid_raw', 'start_time', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS grid_raw_dataset_series_idx ON grid_raw (dataset, series, start_time DESC);
 CREATE INDEX IF NOT EXISTS grid_raw_available_at_idx    ON grid_raw (available_at DESC);
 
--- TODO (Girik, Phase 1): continuous aggregates prices_hh -> prices_daily -> prices_weekly
+-- ---------------------------------------------------------------------------
+-- Hierarchical continuous aggregates: prices_hh -> prices_daily -> prices_weekly
+-- WITH NO DATA so the file can run inside a transaction (and on Tiger); refresh policies fill them.
+-- materialized_only = false: real-time aggregation, so the live chart includes rows newer than the last refresh.
+-- MID volume is stored as its own grid_raw row with series 'APXMIDP:volume'.
+-- Daily/weekly buckets are UK settlement days (Europe/London), so clock-change days are 46/50 periods.
+-- These aggregates are keyed on start_time and carry no available_at; point-in-time guards live in
+-- tempo/features/build.py.
+-- ---------------------------------------------------------------------------
+CREATE MATERIALIZED VIEW IF NOT EXISTS prices_hh
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+SELECT time_bucket('30 minutes', start_time)                  AS bucket,
+       avg(value) FILTER (WHERE series = 'APXMIDP')           AS price,
+       sum(value) FILTER (WHERE series = 'APXMIDP:volume')    AS volume
+FROM grid_raw
+WHERE dataset = 'MID' AND series IN ('APXMIDP', 'APXMIDP:volume')
+GROUP BY 1
+WITH NO DATA;
+
+-- n, sum_price, sum_sq let prices_weekly compute an exact stddev over half-hours.
+CREATE MATERIALIZED VIEW IF NOT EXISTS prices_daily
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+SELECT time_bucket('1 day', bucket, 'Europe/London') AS bucket,
+       avg(price)              AS mean,
+       min(price)              AS min,
+       max(price)              AS max,
+       max(price) - min(price) AS spread,
+       count(price)            AS n,
+       sum(price)              AS sum_price,
+       sum(price * price)      AS sum_sq
+FROM prices_hh
+GROUP BY 1
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS prices_weekly
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+SELECT time_bucket('1 week', bucket, 'Europe/London') AS bucket,
+       sum(sum_price) / NULLIF(sum(n), 0) AS mean,
+       sqrt(greatest((sum(sum_sq) - sum(sum_price) * sum(sum_price) / NULLIF(sum(n), 0))
+                     / NULLIF(sum(n) - 1, 0), 0)) AS stddev,
+       avg(spread) AS spread_mean
+FROM prices_daily
+GROUP BY 1
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('prices_hh',
+  start_offset => INTERVAL '3 days', end_offset => INTERVAL '30 minutes',
+  schedule_interval => INTERVAL '5 minutes', if_not_exists => TRUE);
+SELECT add_continuous_aggregate_policy('prices_daily',
+  start_offset => INTERVAL '4 days', end_offset => INTERVAL '1 hour',
+  schedule_interval => INTERVAL '30 minutes', if_not_exists => TRUE);
+SELECT add_continuous_aggregate_policy('prices_weekly',
+  start_offset => INTERVAL '3 weeks', end_offset => INTERVAL '1 hour',
+  schedule_interval => INTERVAL '1 hour', if_not_exists => TRUE);
+
 -- TODO (Girik, Phase 3): compression policy on grid_raw chunks older than 7 days
 
 -- ---------------------------------------------------------------------------
