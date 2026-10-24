@@ -1,0 +1,42 @@
+{
+  "trained_at": "2026-10-24T19:51:01.029623+00:00",
+  "decision_times": 361,
+  "window": [
+    "2026-07-25 18:00:00+00:00",
+    "2026-10-23 18:00:00+00:00"
+  ],
+  "every_h": 6,
+  "rows": 17328,
+  "rows_with_price": 17288,
+  "features": [
+    "price_lag_1d",
+    "price_lag_7d",
+    "price_last_known",
+    "hours_since_last_price",
+    "daily_spread_lag_1d",
+    "weekly_mean",
+    "weekly_std",
+    "wind_fc",
+    "demand_fc",
+    "wind_share_fc",
+    "hour",
+    "dow",
+    "is_weekend",
+    "period_of_day",
+    "lag_missing",
+    "fc_missing",
+    "horizon_k"
+  ],
+  "holdout": {
+    "holdout_rows": 1344,
+    "p50_mae": 24.446231744394996,
+    "persistence_mae": 33.89300595238095,
+    "band_coverage": 0.6294642857142857
+  },
+  "seconds": 92.3,
+  "files": [
+    "/Users/Ayomide/Desktop/OxHack26/models/lgbm_p10.joblib",
+    "/Users/Ayomide/Desktop/OxHack26/models/lgbm_p50.joblib",
+    "/Users/Ayomide/Desktop/OxHack26/models/lgbm_p90.joblib"
+  ]
+}

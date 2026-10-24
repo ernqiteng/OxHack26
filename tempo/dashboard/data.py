@@ -269,9 +269,11 @@ class SyntheticSource:
         return pd.DataFrame(rows)
 
     def calibration(self) -> pd.DataFrame:
-        nominal = np.array([0.1, 0.25, 0.5, 0.75, 0.9])
-        observed = np.array([0.14, 0.27, 0.49, 0.71, 0.86])
-        return pd.DataFrame({"nominal": nominal, "observed": observed})
+        nominal = np.array([0.1, 0.5, 0.9])
+        observed = np.array([0.14, 0.49, 0.86])
+        out = pd.DataFrame({"nominal": nominal, "observed": observed})
+        out.attrs = {"n": 1344, "coverage_p10_p90": 0.72}
+        return out
 
     def storage_stats(self) -> dict:
         return {"rows": 9_800_000, "before_bytes": 2.1e9, "after_bytes": 0.21e9, "ratio": 10.0}
@@ -422,13 +424,18 @@ class DbSource:
         return self._synthetic("replay_week", "Replay week from backtest_results lands in Phase 3")
 
     # -- Timing audit tab -------------------------------------------------------------------------
-    def recent_decisions(self, limit: int = 20) -> pd.DataFrame:
+    def recent_decisions(self, limit: int = 200) -> pd.DataFrame:
         # run_id 'selftest' is the rehearsal batch from scripts/seed_selftest.py, shown labelled so the fork
         # audit can be clicked before the live decision engine exists. demo_reset warns if it is still there.
+        # Only batches whose 48 periods have all settled can be replayed, so only those are offered.
         sql = (
-            "SELECT decision_id, decided_at, target_time, action, mw, reason, run_id FROM decisions "
-            "WHERE run_id IN ('live', 'selftest') AND action <> 'hold' "
-            "ORDER BY (run_id = 'live') DESC, decided_at DESC, target_time LIMIT %s"
+            "WITH settled AS (SELECT decided_at, run_id FROM decisions "
+            "  WHERE run_id IN ('live', 'selftest') GROUP BY decided_at, run_id "
+            "  HAVING max(target_time) <= (SELECT max(bucket) FROM prices_hh)) "
+            "SELECT d.decision_id, d.decided_at, d.target_time, d.action, d.mw, d.reason, d.run_id "
+            "FROM decisions d JOIN settled s USING (decided_at, run_id) "
+            "WHERE d.action <> 'hold' "
+            "ORDER BY (d.run_id = 'live') DESC, d.decided_at DESC, d.target_time LIMIT %s"
         )
         df = self._try(
             "recent_decisions",
@@ -541,7 +548,35 @@ class DbSource:
         )
 
     def calibration(self) -> pd.DataFrame:
-        return self._synthetic("calibration", "Calibration from Ernqi's reliability table lands in Phase 3")
+        """Observed vs nominal quantile coverage of the live forecasts that have settled, via Ernqi's
+        metrics.calibration (docs/a.md item 5). Columns nominal, observed; attrs carry n and band coverage."""
+
+        def fetch():
+            from tempo.backtest.metrics import calibration
+
+            fc = self._cached(
+                ("live_forecasts",),
+                lambda: self._df(
+                    "SELECT f.target_time, f.p10, f.p50, f.p90 FROM forecasts f "
+                    "WHERE f.run_id = 'live' AND f.target_time <= (SELECT max(bucket) FROM prices_hh)"
+                ),
+            )
+            if fc.empty:
+                return None
+            actuals = self._df(
+                "SELECT bucket, price FROM prices_hh WHERE bucket >= %s AND bucket <= %s",
+                (fc.target_time.min(), fc.target_time.max()),
+            )
+            result = calibration(fc, actuals)
+            if not result["n"]:
+                return None
+            out = result["quantiles"][["nominal", "observed"]].astype(float).reset_index(drop=True)
+            out.attrs = {"n": int(result["n"]), "coverage_p10_p90": float(result["coverage_p10_p90"])}
+            return out
+
+        return self._try(
+            "calibration", fetch, self.fallback.calibration, empty_note="no settled live forecasts yet"
+        )
 
     def storage_stats(self) -> dict:
         def fetch():
