@@ -125,9 +125,11 @@ class TempoModel:
 
     The model and test-day forecasts are cached per window, so tempo and tempo_lp share one fit."""
 
-    def __init__(self, frames, **lgbm_params):
+    def __init__(self, frames, forecaster_factory=None, **lgbm_params):
         self.frames = frames
         self.lgbm_params = lgbm_params
+        # Callable returning a fresh forecaster (fit/predict). None = LightGBM: tempo and tempo_lp unchanged.
+        self.forecaster_factory = forecaster_factory
         self._features: dict[pd.Timestamp, pd.DataFrame | None] = {}
         self._fits: dict[tuple, object] = {}
         self._forecasts: dict[tuple, pd.DataFrame | None] = {}
@@ -160,7 +162,11 @@ class TempoModel:
                 X = pd.concat(X)
                 y = self.frames.prices.reindex(X.index)
                 if y.notna().any():
-                    model = LightGBMQuantileForecaster(**self.lgbm_params)
+                    model = (
+                        self.forecaster_factory()
+                        if self.forecaster_factory
+                        else LightGBMQuantileForecaster(**self.lgbm_params)
+                    )
                     model.fit(X, y)
             self._fits[key] = model
         return self._fits[key]
@@ -205,6 +211,18 @@ def tempo_strategies(frames, **lgbm_params) -> dict[str, StrategyFn]:
 
     model = TempoModel(frames, **lgbm_params)
     return {"tempo": model.strategy(GreedyOptimiser()), "tempo_lp": model.strategy(LPOptimiser())}
+
+
+def tempo_nn_model(frames, device: str | None = None, seed: int = 0) -> TempoModel:
+    """The neural-net TempoModel: same windows, features, train-days-only rule and greedy plan as tempo."""
+    from tempo.forecast.nn import NNQuantileForecaster
+
+    return TempoModel(frames, forecaster_factory=lambda: NNQuantileForecaster(device=device, seed=seed))
+
+
+def tempo_nn_strategies(frames, device: str | None = None, seed: int = 0) -> dict[str, StrategyFn]:
+    """tempo_nn (neural-net forecast + greedy), the GPU run's strategy."""
+    return {"tempo_nn": tempo_nn_model(frames, device, seed).strategy(GreedyOptimiser())}
 
 
 # --- running and regimes -------------------------------------------------------

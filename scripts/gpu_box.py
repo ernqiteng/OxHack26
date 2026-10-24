@@ -3,6 +3,7 @@
     python scripts/gpu_box.py add-key ~/.ssh/tempo_gpu.pub   # register this laptop's key as tempo-girik-gpu
     python scripts/gpu_box.py create                         # one A16 in lhr; waits for SSH; starts billing
     python scripts/gpu_box.py check                          # nvidia-smi + torch.cuda on the box
+    python scripts/gpu_box.py run                            # tempo_nn job on the box -> data/gpu_out
     python scripts/gpu_box.py status                         # uptime and cost so far
     python scripts/gpu_box.py delete                         # delete it (do this whenever it is idle)
 
@@ -153,6 +154,67 @@ def check(client) -> None:
     print("torch:", out.strip())
 
 
+REPO = Path(__file__).resolve().parents[1]
+REMOTE = "/opt/tempo-gpu"
+
+
+def run_job(client, frames_dir: Path, out_dir: Path) -> None:
+    """The tempo_nn job on the box: committed code (git archive HEAD), the parquet frames, Python 3.12 +
+    CUDA torch, scripts/backtest_nn.py --device cuda, results copied back. The box never gets the DSN."""
+    import subprocess
+
+    from tempo.infra.deploy import SSH_OPTS
+
+    ip = only_box(client)["main_ip"]
+    target = f"root@{ip}"
+    base = ["-i", str(KEY_PATH), *SSH_OPTS]
+    print("pushing committed code (git archive HEAD)")
+    archive = subprocess.Popen(["git", "archive", "HEAD"], cwd=REPO, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["ssh", *base, target, f"mkdir -p {REMOTE} && tar -x -C {REMOTE}"], stdin=archive.stdout, check=True
+    )
+    archive.wait()
+    print("copying frames")
+    ssh(ip, KEY_PATH, f"mkdir -p {REMOTE}/data/frames {REMOTE}/out")
+    files = [str(p) for p in sorted(frames_dir.glob("*.parquet"))]
+    subprocess.run(["scp", *base, *files, f"{target}:{REMOTE}/data/frames/"], check=True, capture_output=True)
+    index = cuda_wheel_index(ssh(ip, KEY_PATH, "nvidia-smi", timeout=60))
+    print("installing Python 3.12, CUDA torch and the repo (a few minutes)")
+    ssh(
+        ip,
+        KEY_PATH,
+        "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq"
+        " && apt-get install -y -qq python3-venv >/dev/null"
+        " && python3 -m venv /opt/uv-venv && /opt/uv-venv/bin/pip install -q uv"
+        " && /opt/uv-venv/bin/uv venv -q -p 3.12 /opt/py312"
+        f" && /opt/uv-venv/bin/uv pip install -q --python /opt/py312/bin/python torch --index-url {index}"
+        f" && /opt/uv-venv/bin/uv pip install -q --python /opt/py312/bin/python -e {REMOTE}",
+        timeout=2400,
+    )
+    print("running tempo_nn (30 weeks on cuda) and the 10-window cuda vs cpu timing")
+    out = ssh(
+        ip,
+        KEY_PATH,
+        f"cd {REMOTE} && /opt/py312/bin/python -u scripts/backtest_nn.py"
+        " --frames data/frames --out out --device cuda",
+        timeout=3600,
+    )
+    print(out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "scp",
+            *base,
+            f"{target}:{REMOTE}/out/results_tempo_nn.parquet",
+            f"{target}:{REMOTE}/out/gpu_runs.json",
+            str(out_dir),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    print(f"results copied to {out_dir}. Now delete the box: gpu_box.py delete")
+
+
 def status(client, now: datetime | None = None) -> None:
     boxes = gpu_boxes(client)
     if not boxes:
@@ -192,6 +254,9 @@ def main() -> int:
     k.add_argument("pub", type=Path)
     for name in ("create", "check", "status", "delete"):
         sub.add_parser(name)
+    r = sub.add_parser("run")
+    r.add_argument("--frames", type=Path, default=REPO / "data" / "frames")
+    r.add_argument("--out", type=Path, default=REPO / "data" / "gpu_out")
     a = ap.parse_args()
 
     from tempo.infra.vultr import VultrClient
@@ -203,6 +268,7 @@ def main() -> int:
         "check": lambda: check(client),
         "status": lambda: status(client),
         "delete": lambda: delete(client),
+        "run": lambda: run_job(client, a.frames, a.out),
     }[a.cmd]()
     return 0
 
