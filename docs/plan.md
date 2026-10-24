@@ -34,7 +34,6 @@ tempo/
   forecast/
     persistence.py     PersistenceForecaster                                (B)
     lgbm.py            LightGBMQuantileForecaster                           (B)
-    nn.py              stretch                                              (B)
   optimise/
     greedy.py          GreedyOptimiser                                      (B)
     lp.py              LPOptimiser (cvxpy)                                  (B)
@@ -254,7 +253,7 @@ Phases map to the gates in description.md. **No one moves to the next phase unti
 
 ### Phase 4: Polish and freeze (Gates 5 and 6)
 
-- Stretch items only if their tests are green: LP as default, NN vs LightGBM, battery-size sweep, pgvector similar days.
+- Stretch items only if their tests are green: LP as default, battery-size sweep, pgvector similar days.
 - Record a backup run of the full demo.
 - Rehearse the 3-minute script twice. Freeze. Nothing new after that.
 

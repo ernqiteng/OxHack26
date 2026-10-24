@@ -32,6 +32,29 @@ Done by Ayo so Part B could proceed in parallel. On main after the next merge.
 - `scripts/demo_reset.py` says GO and picked decision #441; clicked live in fork mode: Gate 3.
   Self-grade on the eight cycles: 100% within one period, mean cost of mistiming £0.51.
 
+### Correction (Sat 24 Oct 2026, 23:55 BST): the eight past-dated batches were in-sample
+
+The model above was trained on prices up to 23 Oct 18:00, and the eight past-dated batches (21 Oct 18:00
+to 23 Oct 12:00) were decided with it, so those "decisions" had seen their own outcomes. Their features
+were point-in-time; the model was not. Everything built on them was optimistic: #441's audit, the 77%
+calibration and the 100% self-grade.
+
+Fixed by Ernqi:
+
+- `scripts/train.py --until` trains only on prices published by a cut-off. `models/pre21/` was trained
+  with `--until 2026-10-21T18:00:00Z` (last training price 21 Oct 12:00, published 12:40; 361 decision
+  times, 90 s on CPU; holdout p50 MAE 24.4 vs persistence 31.5, band 52%).
+- The eight old batches were relabelled `run_id='insample-20261024'` (kept, not deleted; 384 decisions and
+  384 forecasts) and regenerated as `live` with `scripts/decide.py --at ... --models models/pre21`. Their
+  p50 moved by GBP 18.74/MWh on average. Live batches from 24 Oct 19:51 on, made by the half-hourly loop
+  on the backend box, were not touched: they are out-of-sample.
+- `demo_reset.py --dry-run`: GO, **click decision #1353** (charge Fri 23 Oct 10:30 UTC, "charging one
+  period later would have cost GBP 20.33", as decided is best, hold nearby). #441 and #680 are now
+  `insample-20261024` and no longer in the audit dropdown.
+- Honest numbers now: self-grade 87.5% of 8 cycles within one period, mean cost of mistiming GBP 6.37;
+  calibration: the p10-p90 band held **40%** of 405 settled live prices against the 80% target. The band is
+  much too narrow, and the honesty panel says so.
+
 ## To do, in order (original list, kept for reference)
 
 1. **`tempo/forecast/dataset.py::make_training_set(conn_or_df, decision_times) -> (X, y)`** (currently a stub). For each historical decision time (every 6 hours over the train window), call `build_features(conn, decision_time)`, add `horizon_k`, and join the realised price for each `target_time` as `y`. Point-in-time correctness comes by construction: features only ever come from `build_features(decision_time)`.

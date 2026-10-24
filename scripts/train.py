@@ -5,6 +5,7 @@
     .venv/bin/python scripts/train.py --days 30 --every 12
     .venv/bin/python scripts/train.py --db local          # the local Docker DB
     .venv/bin/python scripts/train.py --out /opt/tempo/models
+    .venv/bin/python scripts/train.py --until 2026-10-21T18:00:00Z --out models/pre21  # back-dated batches
 
 Owner: Ernqi (Part A, docs/a.md item 2), written by Ayo.
 
@@ -31,6 +32,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tempo.config import REPO_ROOT, settings  # noqa: E402
+from tempo.features.build import mid_delay_min  # noqa: E402
 from tempo.forecast.dataset import decision_times, first_usable_decision_time, make_training_set  # noqa: E402
 from tempo.forecast.lgbm import LightGBMQuantileForecaster  # noqa: E402
 
@@ -57,7 +59,9 @@ def holdout_report(X: pd.DataFrame, y: pd.Series, holdout_days: int, **params) -
     }
 
 
-def train(conn, *, days: int, every_h: int, out: Path, holdout_days: int = 7, **params) -> dict:
+def train(conn, *, days: int, every_h: int, out: Path, holdout_days: int = 7, until=None, **params) -> dict:
+    """until (optional): train only on prices published by then, for a model that may make decisions dated
+    from `until` on without having seen their outcomes."""
     t0 = time.monotonic()
     latest = conn.execute("SELECT max(bucket) FROM prices_hh").fetchone()[0]
     if latest is None:
@@ -65,6 +69,10 @@ def train(conn, *, days: int, every_h: int, out: Path, holdout_days: int = 7, **
     end = pd.Timestamp(latest).tz_convert("UTC").floor("6h") - pd.Timedelta(
         hours=24
     )  # targets mostly settled
+    if until is not None:
+        # The last target starts 24 h after the last decision and is published 30 min + MID delay later.
+        publish_lag = pd.Timedelta(hours=24, minutes=30 + mid_delay_min())
+        end = min(end, (pd.Timestamp(until).tz_convert("UTC") - publish_lag).floor("6h"))
     start = end - pd.Timedelta(days=days)
     earliest = first_usable_decision_time(conn)
     if earliest is not None and pd.Timestamp(earliest) > start:
@@ -89,6 +97,7 @@ def train(conn, *, days: int, every_h: int, out: Path, holdout_days: int = 7, **
         "decision_times": len(times),
         "window": [str(times[0]), str(times[-1])],
         "every_h": every_h,
+        "until": None if until is None else str(pd.Timestamp(until).tz_convert("UTC")),
         "rows": int(len(X)),
         "rows_with_price": int(y.notna().sum()),
         "features": model.features,
@@ -109,7 +118,12 @@ def main(argv: list[str] | None = None) -> int:
         "--db", default=None, help="'local' for the Docker DB, or a DSN; default TEMPO_DATABASE_URL"
     )
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--until", help="train only on prices published by this time (ISO 8601 with timezone)")
     args = ap.parse_args(argv)
+    until = pd.Timestamp(args.until) if args.until else None
+    if until is not None and until.tzinfo is None:
+        print("--until needs a timezone, e.g. 2026-10-21T18:00:00Z")
+        return 2
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     import psycopg
@@ -120,7 +134,14 @@ def main(argv: list[str] | None = None) -> int:
         print("no database: set TEMPO_DATABASE_URL or pass --db")
         return 2
     with psycopg.connect(url, autocommit=True) as conn:
-        meta = train(conn, days=args.days, every_h=args.every, out=args.out, holdout_days=args.holdout_days)
+        meta = train(
+            conn,
+            days=args.days,
+            every_h=args.every,
+            out=args.out,
+            holdout_days=args.holdout_days,
+            until=until,
+        )
     h = meta["holdout"]
     print(f"saved {len(meta['files'])} files to {args.out} ({meta['rows']} rows, {meta['seconds']}s)")
     if h:

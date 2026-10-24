@@ -2,10 +2,12 @@
 
 Status check against [girik.md](girik.md), first written by Ayo from main and Tiger, then corrected by Girik against main and Tiger (same evening). Fix anything here that is wrong.
 
+> **Status (checked against main and Tiger, 25 Oct 2026 00:30 BST): every item below is done.** NDF is backfilled for the full two years (2.06M rows), `prices_daily` has 732 rows and `prices_weekly` 105, `build_features` is on main, the poller runs on the backend box (newest price 24 Oct 23:00 UTC at the check), and every test named in items 4 to 9 exists, including `ingest_log` in `tests/conftest.py`. Gates 0, 1, 3 and 4 are recorded at the top of girik.md. The list is kept for reference; the counts in "Done and verified" are from the time it was written.
+
 ## Done and verified on Tiger
 
 - Phase 0: schema with the three hierarchical aggregates, `conn.py`, local Docker DB, `test_schema.py`.
-- Phase 1: Elexon client, `normalise`, resumable two-year backfill (resume reads `ingest_log`, coverage checked per dataset). Tiger `grid_raw` holds MID 70k, WINDFOR 426k, FUELHH 701k, INDO 35k, DISEBSP 35k rows, 24 Oct 2024 to 24 Oct 2026, and NDF 676k rows for 24 Oct 2024 to 22 Jun 2025 only (see item 1). `prices_hh` has 35,018 half-hours. Gate 1 lookahead check on Tiger: **0** non-forecast rows with `available_at > now()`.
+- Phase 1: Elexon client, `normalise`, resumable two-year backfill (resume reads `ingest_log`, coverage checked per dataset). Tiger `grid_raw` holds MID 70k, WINDFOR 426k, FUELHH 701k, INDO 35k, DISEBSP 35k rows, 24 Oct 2024 to 24 Oct 2026, and NDF 676k rows for 24 Oct 2024 to 22 Jun 2025 only (see item 1; since completed: 2.06M rows to 26 Oct 2026). `prices_hh` has 35,018 half-hours (35,064 on 25 Oct, growing with the poller). Gate 1 lookahead check on Tiger: **0** non-forecast rows with `available_at > now()`.
 - Storage: the cap is enforced on Tiger's API `metrics.storage_mb`, which is **533 of 750 MB** now (it includes Tiger's ~340 MB own overhead). `pg_database_size` (~150 MB) does not include that overhead; don't use it for headroom. Headroom is ~217 MB.
 - Phase 3, early: compression policy is on `grid_raw` (107 chunks, 105 compressed), `storage_stats()` exists, `test_compression_equivalence.py` passes and already asserts `storage_stats` ratio > 1 after compression.
 - Ernqi's real-data backtest runs on your `prices_hh` (Gate 2 reached).

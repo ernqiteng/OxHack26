@@ -8,13 +8,16 @@ OxHack 2026. Theme: TIME. Track: HRT, Best Use of Data for Predictions and Decis
 
 | File | What it is |
 |---|---|
-| [docs/description.md](docs/description.md) | What Tempo is, the four layers, the demo script, why it wins |
+| [docs/description.md](docs/description.md) | What Tempo is, the three layers, the demo script, why it wins |
 | [docs/needs.md](docs/needs.md) | Feasibility findings, every API, key, endpoint and env var |
 | [docs/plan.md](docs/plan.md) | Implementation plan, phases, tests, frozen contracts |
 | [docs/girik.md](docs/girik.md) | Part A: Data (Elexon → Tiger Data → features) |
 | [docs/ernqi.md](docs/ernqi.md) | Part B: Brain (battery, optimiser, forecaster, backtest) |
 | [docs/ayo.md](docs/ayo.md) | Part C: Stage (forks, workers, timing audit, dashboard, demo) |
-| [docs/todo_ayo.md](docs/todo_ayo.md), [todo_girik.md](docs/todo_girik.md), [todo_ernqi.md](docs/todo_ernqi.md) | What each of us has left, checked against main and Tiger on 24 Oct evening |
+| [docs/todo_ayo.md](docs/todo_ayo.md), [todo_girik.md](docs/todo_girik.md), [todo_ernqi.md](docs/todo_ernqi.md) | What each of us has left, checked against main and Tiger on 24 Oct evening (status re-checked 25 Oct 00:30 BST) |
+| [docs/a.md](docs/a.md), [docs/b.md](docs/b.md) | Ernqi's remaining work split in two: live decisions (Part A) and backtest, replay and clean-up (Part B). Both done |
+| [docs/time.md](docs/time.md) | Planned but not built: parallel backtest on the Vultr workers, battery-size sweep |
+| [info.md](info.md) | Pre-hackathon idea and research. Superseded: don't quote it in the pitch |
 | [docs/ui-plan.md](docs/ui-plan.md) | Two-page UI plan: Toven-style pitch page and dashboard, extracted tokens, motion spec, build order |
 | [docs/ui.md](docs/ui.md) | Dashboard screen content, chart grammar and audit choreography (theme superseded by ui-plan.md) |
 
@@ -31,7 +34,7 @@ make dashboard
 
 ## Before every rehearsal and before going on stage
 
-Run the go/no-go check. It prints one line per check, then `GO` (exit code 0) or `NO-GO` (exit code 1).
+Run the go/no-go check. It prints one line per check, then `GO` (exit code 0) or `NO-GO` (exit code 1). On Windows, use `.venv/Scripts/python` in place of `.venv/bin/python`.
 
 ```bash
 .venv/bin/python scripts/demo_reset.py              # check, delete stale audit forks, pick a decision to click
