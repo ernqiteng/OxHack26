@@ -78,7 +78,7 @@ Makefile               make setup / test / test-db / test-live / lint / db / das
 
 ### 2.1 Database schema (A owns the SQL, everyone depends on it)
 
-All timestamps `timestamptz` in UTC. All hypertables partitioned on the first column.
+All timestamps `timestamptz` in UTC. All hypertables partitioned on the first column. This section matches what is live on Tiger as of 2026-10-24 (read back from the database, not just from `schema.sql`).
 
 ```sql
 -- raw market data, one table, long format
@@ -86,50 +86,74 @@ grid_raw(
   start_time        timestamptz NOT NULL,   -- period/hour start
   available_at      timestamptz NOT NULL,   -- Elexon publishTime, or derived for MID
   dataset           text NOT NULL,          -- 'MID','WINDFOR','NDF','INDO','FUELHH','DISEBSP'
-  series            text NOT NULL,          -- provider / fuelType / boundary / ''
+  series            text NOT NULL DEFAULT '',  -- provider / fuelType / boundary / ''
+                                            -- MID price is series 'APXMIDP', MID volume is 'APXMIDP:volume'
   value             double precision NOT NULL,
   settlement_date   date,
   settlement_period smallint,
   PRIMARY KEY (start_time, available_at, dataset, series)
 );
 
--- half-hourly APX price, the one series everything trades on
-prices_hh      (bucket timestamptz, price double precision, volume double precision)  -- continuous aggregate
-prices_daily   (bucket timestamptz, mean, min, max, spread)                             -- on prices_hh
-prices_weekly  (bucket timestamptz, mean, stddev, spread_mean)                          -- on prices_daily
+-- half-hourly APX price, the one series everything trades on (continuous aggregates, real-time enabled)
+prices_hh      (bucket, price, volume)
+               -- time_bucket('30 min', start_time) on grid_raw WHERE dataset='MID';
+               -- price = avg of series 'APXMIDP', volume = sum of series 'APXMIDP:volume'
+               -- refresh every 5 min, window 3 days back to 30 min ago
+prices_daily   (bucket, mean, min, max, spread, n, sum_price, sum_sq)
+               -- on prices_hh, time_bucket('1 day', bucket, 'Europe/London'): one bucket = one UK
+               -- settlement day, so 46 or 50 periods on clock-change days.
+               -- n, sum_price, sum_sq exist so prices_weekly.stddev is over half-hour prices, not daily means
+prices_weekly  (bucket, mean, stddev, spread_mean)
+               -- on prices_daily, time_bucket('7 days', bucket, 'Europe/London'), Monday-aligned
+               -- mean = sum(sum_price)/sum(n); stddev = sample stddev of half-hour prices
 
 forecasts(
   forecast_id   bigserial, decided_at timestamptz NOT NULL, target_time timestamptz NOT NULL,
-  p10 double precision, p50 double precision, p90 double precision, model text
+  p10 double precision, p50 double precision, p90 double precision, model text,
+  run_id text NOT NULL DEFAULT 'live',
+  PRIMARY KEY (decided_at, forecast_id)
 );
 
 decisions(
   decision_id    bigserial, decided_at timestamptz NOT NULL, target_time timestamptz NOT NULL,
-  action         text CHECK (action IN ('charge','discharge','hold')),
-  mw             double precision,       -- signed power for the period, 0 for hold
+  action         text NOT NULL CHECK (action IN ('charge','discharge','hold')),
+  mw             double precision NOT NULL DEFAULT 0,  -- signed: + charge, - discharge, 0 hold
   reason         text,                   -- e.g. 'spread 12.3 < cost 18.0'
-  expected_spread double precision, forecast_id bigint, run_id text
+  expected_spread double precision, forecast_id bigint,
+  run_id text NOT NULL DEFAULT 'live',
+  PRIMARY KEY (decided_at, decision_id)
 );
 
 battery_state(
-  ts timestamptz NOT NULL, soc_mwh double precision, cum_pnl_gbp double precision, run_id text
+  ts timestamptz NOT NULL,               -- state at the END of the period (target_time + 30 min)
+  soc_mwh double precision NOT NULL, cum_pnl_gbp double precision NOT NULL, run_id text NOT NULL,
+  PRIMARY KEY (ts, run_id)               -- rewriting a run_id means deleting its old rows first
 );
 
 audits(
-  audit_id bigserial, decision_id bigint, shift smallint,   -- -2..2
-  pnl_gbp double precision, pnl_delta_gbp double precision,
-  mode text CHECK (mode IN ('inprocess','fork')),
+  audit_id bigserial, decision_id bigint NOT NULL,
+  shift smallint NOT NULL CHECK (shift BETWEEN -2 AND 2),
+  pnl_gbp double precision,              -- NULL when that shift failed
+  pnl_delta_gbp double precision,        -- pnl[shift] - pnl[0]; NULL if either is NULL
+  mode text NOT NULL CHECK (mode IN ('inprocess','fork')),
   fork_service_id text, worker_id text,
-  started_at timestamptz, finished_at timestamptz
+  started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz,
+  PRIMARY KEY (started_at, audit_id)
 );
 
 backtest_results(
-  run_id text, week_start date, strategy text, pnl_gbp double precision,
-  perfect_pnl_gbp double precision, pct_of_perfect double precision, regime text
+  run_id text NOT NULL, week_start date NOT NULL, strategy text NOT NULL,
+  pnl_gbp double precision NOT NULL, perfect_pnl_gbp double precision NOT NULL,
+  pct_of_perfect double precision NOT NULL, regime text,
+  PRIMARY KEY (run_id, week_start, strategy)   -- use a fresh run_id per backtest, or delete first
 );
 ```
 
 `run_id` is `'live'` for the real system; forks and backtests write their own ids, so replays never collide with live rows.
+
+**Keys that bite on retries.** `battery_state` rejects a second `(ts, run_id)` and `backtest_results` rejects a second `(run_id, week_start, strategy)`. Anything that can be re-run either uses a new `run_id` or deletes its old rows first. `replay_shift` deletes its own run's rows in the replay window before writing, so audits can be retried with the same `audit-{decision_id}-{shift}` ids.
+
+**UK-time buckets.** Daily and weekly aggregates bucket in `Europe/London`. Anything that joins to them (features, regime labels, the dashboard) should treat a "day" as a settlement day, not a UTC day.
 
 ### 2.2 Python interfaces
 

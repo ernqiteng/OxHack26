@@ -1,0 +1,19 @@
+# Replay worker (Phase 2). Baked into the worker snapshot; starts on boot. WORKER_ID comes from the hostname.
+[Unit]
+Description=Tempo replay worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tempo
+WorkingDirectory=/opt/tempo
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/sh -c 'WORKER_ID=$(hostname) exec /opt/tempo/.venv/bin/uvicorn tempo.worker.main:app --host 0.0.0.0 --port 8000'
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/tempo/worker.log
+StandardError=append:/var/log/tempo/worker.log
+
+[Install]
+WantedBy=multi-user.target
