@@ -158,19 +158,29 @@ def pct_of_perfect(pnl: float, perfect_pnl: float) -> float:
 
 def weekly_regimes(grid: pd.DataFrame, windows) -> dict:
     """'windy' if the week's mean wind share of demand (WINDFOR / NDF) is above the median week, else 'calm'.
-    Uses the latest published forecast for each start_time. Keyed by test week start date."""
+    If NDF does not cover every test week, the whole run uses mean WINDFOR MW instead, so one run has one
+    definition. Uses the latest published forecast for each start_time. Keyed by test week start date."""
 
     def latest(dataset):
         rows = grid[grid.dataset == dataset].sort_values("available_at")
         return rows.groupby("start_time").value.last()
 
-    wind, demand = latest("WINDFOR"), latest("NDF")
-    shares = {}
-    for w in windows:
-        in_week = lambda s: s[(s.index >= w.test_start) & (s.index < w.test_end)]  # noqa: E731
-        shares[w.test_start.date()] = in_week(wind).mean() / in_week(demand).mean()
-    median = np.median(list(shares.values()))
-    return {week: ("windy" if share > median else "calm") for week, share in shares.items()}
+    def weekly_mean(series):
+        return {
+            w.test_start.date(): series[(series.index >= w.test_start) & (series.index < w.test_end)].mean()
+            for w in windows
+        }
+
+    wind, demand = weekly_mean(latest("WINDFOR")), weekly_mean(latest("NDF"))
+    if all(pd.notna(v) for v in demand.values()):
+        shares = {week: wind[week] / demand[week] for week in wind}
+    else:
+        shares = wind
+    known = [v for v in shares.values() if pd.notna(v)]
+    if not known:
+        return {}
+    median = np.median(known)
+    return {week: ("windy" if share > median else "calm") for week, share in shares.items() if pd.notna(share)}
 
 
 def run_all(prices_hh, grid, windows, run_id, strategies=None, battery=None) -> pd.DataFrame:

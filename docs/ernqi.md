@@ -91,7 +91,7 @@ Backtest table on real Tiger data for simple rule, persistence + greedy, perfect
 | Persistence + greedy | £46,798 | 52.9% |
 | Perfect foresight | £88,388 | 100% |
 
-Lookahead sanity: 0 of 300 rows above 100% (max exactly 100.0). Ayo's `DbSource.backtest_summary()` reads it. Not yet: `regime` is NULL because WINDFOR/NDF were not loaded at run time; re-run with a new run_id once they are, and the dashboard (latest run_id) picks it up. Note: `prices_hh`'s refresh policy only covers the last 3 days, so history needed a one-off `CALL refresh_continuous_aggregate('prices_hh', NULL, now() - interval '30 minutes')` after the backfill.
+Lookahead sanity: 0 of 300 rows above 100% (max exactly 100.0). Ayo's `DbSource.backtest_summary()` reads it. Regime-labelled re-run: `db-20261024T181359Z` (same totals, 50 windy / 50 calm weeks by mean WINDFOR / NDF share, after NDF was backfilled to the full two years). Simple rule: 36.0% on windy weeks vs 29.1% on calm; persistence + greedy 54.2% vs 51.3%. `weekly_regimes` falls back to mean WINDFOR MW if NDF ever misses a test week (the interim run `db-20261024T180607Z` did, and labelled 20 weeks differently). Note: `prices_hh`'s refresh policy only covers the last 3 days, so history needed a one-off `CALL refresh_continuous_aggregate('prices_hh', NULL, now() - interval '30 minutes')` after the backfill.
 
 ---
 
