@@ -153,7 +153,12 @@ def ladder(summary: pd.DataFrame, main_prefix: str = "tempo") -> alt.LayerChart:
             y=alt.Y(
                 "strategy:N", sort=order, title=None, axis=alt.Axis(labelLimit=320, labelFont="IBM Plex Sans")
             ),
-            x=alt.X("pct_of_perfect:Q", title="% of perfect foresight", scale=alt.Scale(domain=[0, 105])),
+            x=alt.X(
+                "pct_of_perfect:Q",
+                title="% of perfect foresight",
+                scale=alt.Scale(domain=[0, 112]),
+                axis=alt.Axis(values=[0, 25, 50, 75, 100]),
+            ),
             color=alt.condition("datum.is_main", alt.value(T.BRAND), alt.value(T.HOLD)),
             tooltip=["strategy:N", "pnl_gbp:Q", "pct_of_perfect:Q"],
         )

@@ -382,7 +382,9 @@ def section_honesty(src) -> None:
     ui.section("honesty", sentence, "honesty")
 
     ui.fig_label("4.1", "Walk-forward backtest on unseen weeks, % of perfect foresight")
-    st.altair_chart(ui.ladder(summary), width="stretch")
+    st.altair_chart(
+        ui.ladder(summary, main_prefix=main.strategy if main is not None else "tempo"), width="stretch"
+    )
     with st.expander("Backtest table"):
         st.dataframe(
             summary.style.format({"pnl_gbp": "£{:,.0f}", "pct_of_perfect": "{:.1f}%"}),
