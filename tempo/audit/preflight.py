@@ -52,7 +52,13 @@ class Candidate:
             return None
         return self.pnl[1] - self.pnl[0]
 
+    @property
+    def scored(self) -> bool:
+        return bool(self.pnl)
+
     def sentence(self) -> str:
+        if not self.scored:
+            return "not scored (run without --no-score to rank by timing)"
         d = self.later_delta
         if d is None:
             return "shift +1 could not be replayed"
@@ -79,16 +85,23 @@ class Report:
             out.append("")
             out.append("Decisions worth clicking (best first):")
             for c in self.candidates[:5]:
-                flags = ("as decided is best" if c.zero_is_best else "a shift beats it") + (
-                    ", hold nearby" if c.has_hold else ""
-                )
+                flags = (
+                    ("as decided is best" if c.zero_is_best else "a shift beats it")
+                    if c.scored
+                    else "unscored"
+                ) + (", hold nearby" if c.has_hold else "")
                 out.append(
                     f"  #{c.decision_id:<6} {c.target_time:%a %d %b %H:%M} UTC  {c.action:<9} "
                     f"{c.sentence()}  ({flags})"
                 )
         out.append("")
         if self.go:
-            pick = f", click decision #{self.decision.decision_id}" if self.decision else ""
+            if self.decision is None:
+                pick = ""
+            elif self.decision.scored:
+                pick = f", click decision #{self.decision.decision_id}"
+            else:
+                pick = " (decisions not scored: run without --no-score to choose one)"
             warns = sum(c.level == WARN for c in self.checks)
             out.append(f"GO{pick}" + (f"  ({warns} warning{'s' * (warns != 1)}, read them)" if warns else ""))
         else:
@@ -250,6 +263,8 @@ def find_candidates(conn, *, limit_batches: int = 30, score: bool = True, replay
         out.append(Candidate(did, decided_at, target, action, pnl, bool(has_hold)))
 
     def rank(c: Candidate):
+        if not c.scored:  # unscored: newest first, holds nearby preferred
+            return (False, not c.has_hold, -c.decided_at.timestamp())
         d = c.later_delta
         return (not c.zero_is_best, not c.has_hold, d if d is not None else 0.0)
 
