@@ -207,11 +207,12 @@ Take Tiger Data away and both the feature pipeline and the signature mechanic go
 ### Vultr
 
 - **Parallel replay workers** for the timing audit, provisioned via the Vultr API. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
-- **Model training** on CPU. GPU plans are not available to this account (every Vultr GPU plan reports no locations, checked via the API), and LightGBM on tabular features does not need one.
 - **If time allows, not built:** parallel walk-forward backtests on the workers with a measured speed-up, and a battery-size sweep. See [time.md](time.md).
 - **Backend and dashboard hosting**, the least interesting part.
 
 The timing audit doesn't happen without Vultr compute provisioned on demand.
+
+Model training is not a Vultr job. LightGBM trains on a laptop CPU in about 90 seconds, most of it fetching features from Tiger, and the model is then copied to the backend box. GPU plans are not available to this account (every Vultr GPU plan reports no locations, checked via the API), and gradient-boosted trees on tabular features do not need one.
 
 ---
 

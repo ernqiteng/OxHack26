@@ -1,0 +1,43 @@
+{
+  "trained_at": "2026-10-24T22:47:05.934729+00:00",
+  "decision_times": 361,
+  "window": [
+    "2026-07-22 12:00:00+00:00",
+    "2026-10-20 12:00:00+00:00"
+  ],
+  "every_h": 6,
+  "until": "2026-10-21 18:00:00+00:00",
+  "rows": 17328,
+  "rows_with_price": 17288,
+  "features": [
+    "price_lag_1d",
+    "price_lag_7d",
+    "price_last_known",
+    "hours_since_last_price",
+    "daily_spread_lag_1d",
+    "weekly_mean",
+    "weekly_std",
+    "wind_fc",
+    "demand_fc",
+    "wind_share_fc",
+    "hour",
+    "dow",
+    "is_weekend",
+    "period_of_day",
+    "lag_missing",
+    "fc_missing",
+    "horizon_k"
+  ],
+  "holdout": {
+    "holdout_rows": 1344,
+    "p50_mae": 24.429780548861768,
+    "persistence_mae": 31.497120535714288,
+    "band_coverage": 0.5186011904761905
+  },
+  "seconds": 89.9,
+  "files": [
+    "models\\pre21\\lgbm_p10.joblib",
+    "models\\pre21\\lgbm_p50.joblib",
+    "models\\pre21\\lgbm_p90.joblib"
+  ]
+}
