@@ -108,6 +108,8 @@ Two versions of the optimiser:
 - **Version 1, greedy rule.** Charge in the cheapest predicted periods, discharge in the most expensive, within the capacity and rate limits. Simple, fast, and a solid fallback.
 - **Version 2, linear program.** A `cvxpy` LP that maximises expected profit over the 48-period horizon subject to every battery constraint: state-of-charge bounds, charge and discharge rate limits, efficiency losses, and degradation cost.
 
+**What runs live: the greedy rule.** Both optimisers are built, tested and in the walk-forward backtest with the same LightGBM forecast. Over 100 unseen weeks the LP captured 68% of perfect foresight and greedy 66%. Two points was not enough to swap the live decider the night before the demo, and it follows the simple-first rule we hold ourselves to: prefer the simpler method unless the complex one is clearly better. Both rows are on the honesty table so the judges can see the gap themselves. The LP is one flag away (`scripts/decide.py --optimiser lp`) and is the obvious next step with more data.
+
 Every decision, whether charge, discharge or hold, is written to a **decisions hypertable** along with its timestamp and the full forecast it was based on. That record is what the timing audit replays.
 
 ### Layer 2: Timing audit (the signature mechanic)
@@ -173,7 +175,7 @@ feature pipeline (only data available before decision time)
         │
 forecaster on Vultr  → 48-period price quantiles (p10 / p50 / p90)
         │
-battery optimiser (greedy → cvxpy LP), cost-gated: charge / discharge / hold
+battery optimiser (greedy live; cvxpy LP as a backtest row), cost-gated: charge / discharge / hold
         │
 decision + forecast + timestamp written to decisions hypertable
         │
@@ -226,7 +228,7 @@ The timing audit doesn't happen without Vultr compute provisioned on demand.
 | 35s | Live view | Current settlement period, next 24h forecast with uncertainty bands, today's schedule, and a recent hold with its reason: "expected spread didn't cover the 10% efficiency loss." |
 | 50s | Replay | Rewind to a windy week, play it forward: forecast vs reality, battery charging and selling, £ ticking up. |
 | 40s | Timing audit | Click a decision. Tiger forks the live database, five Vultr workers replay five timelines in it in parallel, side-by-side result: "an hour later would have cost £31." Then the running self-grade. While the fork spins up (~40 s), tell the challenge from section 11. |
-| 30s | Honesty panel | Backtest table, % of perfect foresight, calibration, plain statement of where it's weak. |
+| 30s | Honesty panel | Backtest table, % of perfect foresight, calibration, plain statement of where it's weak. If asked why the LP row beats the live Tempo row: "two points over a hundred weeks, simple first, it's one flag to switch." |
 | 5s | Close | "Most projects stop at a prediction. We turned it into a decision, and then proved whether we made it at the right time." |
 
 ---
@@ -249,7 +251,7 @@ Cut from the bottom if time runs out.
 
 ### Nice-to-have (cut first)
 
-7. `cvxpy` LP optimiser (greedy is an acceptable fallback).
+7. `cvxpy` LP optimiser. Built, tested, and in the backtest as the Tempo LP row (68% vs greedy's 66%). Greedy stays live, see section 3.
 8. Neural net vs LightGBM comparison, trained on a Vultr CPU worker (no GPU on this account).
 9. Battery-size sweep and regime breakdown.
 10. pgvector "similar days" lookup, finding historical days whose shape matches today's forecast.
@@ -306,7 +308,7 @@ The track rewards decisions, not just predictions. HRT's own writing on AI in tr
 
 It also follows the research habits HRT writes about publicly:
 
-- **Simple first.** Prefer the simpler model if it's as good (HRT: *ML benchmarks*). The neural net stays only if it beats LightGBM.
+- **Simple first.** Prefer the simpler model if it's as good (HRT: *ML benchmarks*). The neural net stays only if it beats LightGBM. The greedy optimiser stays live because the LP's two-point gain over 100 weeks did not justify the swap; the LP sits on the honesty table as a row, not in production.
 - **Don't fool yourself.** Low signal-to-noise domains make it easy to see edges that aren't there. We test only on unseen weeks against honest baselines.
 - **No lookahead.** Availability-time stamping on every row (HRT: *How HRT Thinks About Data*).
 

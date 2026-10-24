@@ -110,7 +110,7 @@ def test_go_when_clean():
     assert r.go, r.lines()
     assert set(levels(r).values()) == {OK}
     assert r.decision.decision_id == 101
-    assert r.lines()[-1] == "GO, click decision #101"
+    assert r.lines()[-1] == "GO (decisions not scored: run without --no-score to choose one)"
 
 
 def test_unhealthy_worker_is_no_go():
@@ -222,3 +222,10 @@ def test_rehearsal_rows_warn_but_go():
     r = run(conn=StubConn(selftest_rows=48))
     assert r.go and levels(r)["rehearsal"] == WARN
     assert "seed_selftest.py --remove" in next(c.message for c in r.checks if c.name == "rehearsal")
+
+
+def test_unscored_candidates_say_so():
+    r = run(score=False)
+    assert r.decision.decision_id == 101
+    assert "not scored" in r.decision.sentence()
+    assert "could not be replayed" not in "\n".join(r.lines())

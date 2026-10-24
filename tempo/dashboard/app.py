@@ -21,11 +21,11 @@ from tempo.config import settings
 from tempo.dashboard import jobs, ui
 from tempo.dashboard import theme as T
 from tempo.dashboard.data import (
+    HEADLINE_STRATEGY,
     SHIFTS,
+    STRATEGY_LABELS,
     calibration_sentence,
     current_settlement_period,
-    headline_name,
-    main_strategy_row,
     pick_source,
 )
 
@@ -70,6 +70,18 @@ def show_notes(src, *methods: str) -> None:
             st.warning(f"{m}: {note}", icon="⚠️")
 
 
+def main_strategy_row(summary: pd.DataFrame):
+    """The honesty number: Tempo's row if present, else the best non-perfect row."""
+    rows = summary[~summary.strategy.str.lower().str.startswith("perfect")]
+    if rows.empty:
+        return None
+    live = rows[rows.strategy == STRATEGY_LABELS[HEADLINE_STRATEGY]]
+    if not live.empty:
+        return live.iloc[0]
+    tempo = rows[rows.strategy.str.lower().str.startswith("tempo")]
+    return (tempo if not tempo.empty else rows.sort_values("pct_of_perfect")).iloc[-1]
+
+
 # ---------------------------------------------------------------------------------------------
 # Header strip
 # ---------------------------------------------------------------------------------------------
@@ -92,7 +104,7 @@ def header_strip() -> None:
         main = main_strategy_row(summary)
         if main is not None:
             weeks = src.backtest_weeks()
-            name = headline_name(main)
+            name = main.strategy.split(" (")[0]
             st.markdown(
                 f"**[{name} captures {main.pct_of_perfect:.1f}% of perfect foresight"
                 + (f" over {weeks} unseen weeks" if weeks else "")
@@ -371,7 +383,7 @@ def section_honesty(src) -> None:
     main = main_strategy_row(summary)
     weeks = src.backtest_weeks()
     if main is not None:
-        name = headline_name(main)
+        name = main.strategy.split(" (")[0]
         sentence = f"{name} captures {main.pct_of_perfect:.1f}% of perfect-foresight profit" + (
             f" over {weeks} unseen weeks." if weeks else "."
         )

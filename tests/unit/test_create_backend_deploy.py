@@ -3,7 +3,7 @@
 models/ is excluded from the rsync (the LightGBM joblibs are big and machine-local), and the deploy used to
 scp only lgbm_*.joblib + training.json, and only when at least 3 of them existed. So the replay week
 (models/replay_week.parquet) never reached the box and the live Replay tab showed the synthetic fallback.
-These tests run the deploy with SSH, scp and the health check stubbed: no network.
+These tests run the real deploy() with SSH, scp and the health check stubbed: no network.
 """
 
 import importlib.util
@@ -19,9 +19,9 @@ spec.loader.exec_module(cb)
 REPLAY = ("replay_week.parquet", "replay_week.json")
 
 
-def test_the_repo_has_the_replay_week_and_deploy_lists_it():
-    _, data = cb.deploy_files(cb.REPO_ROOT / "models")
-    assert sorted(p.name for p in data) == sorted(REPLAY)
+def test_the_repo_has_the_replay_week():
+    models = Path(__file__).resolve().parents[2] / "models"
+    assert all((models / name).exists() for name in REPLAY)
 
 
 @pytest.fixture
@@ -49,6 +49,7 @@ def stubbed(tmp_path, monkeypatch):
 
 
 def test_replay_week_is_copied_even_without_model_files(stubbed):
+    """The laptop that deploys usually has no joblibs (they live where the model was trained)."""
     models, calls = stubbed
     for name in REPLAY:
         (models / name).write_bytes(b"x")

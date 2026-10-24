@@ -24,7 +24,7 @@ import pandas as pd
 LONDON = ZoneInfo("Europe/London")
 REPLAY_WEEK_PATH = Path(__file__).resolve().parents[2] / "models" / "replay_week.parquet"
 SHIFTS = (-2, -1, 0, 1, 2)
-STRATEGIES = ("simple_rule", "persistence_greedy", "tempo", "perfect")
+STRATEGIES = ("simple_rule", "persistence_greedy", "tempo", "tempo_lp", "perfect")
 STRATEGY_LABELS = {
     "simple_rule": "Simple rule (charge 01:00-05:00, sell 17:00-19:00)",
     "persistence_greedy": "Persistence forecast + same optimiser",
@@ -32,24 +32,9 @@ STRATEGY_LABELS = {
     "tempo_lp": "Tempo LP (LightGBM forecast + LP optimiser)",
     "perfect": "Perfect knowledge of the future",
 }
-# Display order for real backtest rows (the synthetic fallback keeps STRATEGIES, which has no tempo_lp).
-SUMMARY_ORDER = ("simple_rule", "persistence_greedy", "tempo", "tempo_lp", "perfect")
-
-
-def main_strategy_row(summary: pd.DataFrame):
-    """The honesty number shown in the header, the honesty sentence and the ladder: the headline strategy
-    (metrics.HEADLINE_STRATEGY, the one the live decider runs) if present, else any other Tempo row, else the
-    best non-perfect row. `summary` is backtest_summary() output, keyed by display label."""
-    from tempo.backtest.metrics import HEADLINE_STRATEGY
-
-    rows = summary[~summary.strategy.str.lower().str.startswith("perfect")]
-    if rows.empty:
-        return None
-    headline = rows[rows.strategy == STRATEGY_LABELS[HEADLINE_STRATEGY]]
-    if not headline.empty:
-        return headline.iloc[0]
-    tempo = rows[rows.strategy.str.lower().str.startswith("tempo")]
-    return (tempo if not tempo.empty else rows.sort_values("pct_of_perfect")).iloc[-1]
+HEADLINE_STRATEGY = "tempo"  # what the live engine runs (scripts/decide.py defaults to greedy)
+# Must equal tempo.backtest.metrics.HEADLINE_STRATEGY (the weak statements' subject); a unit test checks it.
+# Not imported from there: metrics pulls in the optimisers (~3 s) and the dashboard does not need them.
 
 
 def calibration_sentence(n: int, coverage: float, target: float = 0.80, tolerance: float = 0.02) -> str:
@@ -63,7 +48,7 @@ def calibration_sentence(n: int, coverage: float, target: float = 0.80, toleranc
         verdict = (
             "slightly overconfident (the band is too narrow)"
             if coverage >= target - 0.10
-            else ("overconfident (the band is too narrow)")
+            else "overconfident (the band is too narrow)"
         )
     elif coverage > target + tolerance:
         verdict = "under-confident (the band is too wide)"
@@ -73,11 +58,6 @@ def calibration_sentence(n: int, coverage: float, target: float = 0.80, toleranc
         f"{held} against an {100 * target:.0f}% target: {verdict}. "
         "Trades use the p50 forecast only, so the band's width never changes a decision."
     )
-
-
-def headline_name(row) -> str:
-    """'Tempo' from 'Tempo (LightGBM forecast + same optimiser)': the short name the sentences use."""
-    return row.strategy.split(" (")[0]
 
 
 def utc_now() -> datetime:
@@ -291,7 +271,13 @@ class SyntheticSource:
     # Honesty tab ------------------------------------------------------------------------------
     def backtest_summary(self) -> pd.DataFrame:
         perfect = 4120.0
-        totals = {"simple_rule": 1980.0, "persistence_greedy": 2410.0, "tempo": 2890.0, "perfect": perfect}
+        totals = {
+            "simple_rule": 1980.0,
+            "persistence_greedy": 2410.0,
+            "tempo": 2890.0,
+            "tempo_lp": 2960.0,
+            "perfect": perfect,
+        }
         return pd.DataFrame(
             {
                 "strategy": [STRATEGY_LABELS[s] for s in STRATEGIES],
@@ -306,7 +292,7 @@ class SyntheticSource:
     def backtest_by_regime(self) -> pd.DataFrame:
         rows = []
         for regime, scale in (("calm", 0.6), ("windy", 1.4)):
-            for s, pct in zip(STRATEGIES, (48, 58, 70, 100), strict=True):
+            for s, pct in zip(STRATEGIES, (48, 58, 70, 72, 100), strict=True):
                 rows.append(
                     {
                         "regime": regime,
@@ -577,7 +563,7 @@ class DbSource:
             df = self._cached(("summary",), lambda: self._df(sql))
             if df.empty:
                 return df
-            order = {s: i for i, s in enumerate(SUMMARY_ORDER)}
+            order = {s: i for i, s in enumerate(STRATEGIES)}
             df = df.assign(_o=df.strategy.map(order).fillna(99)).sort_values("_o").drop(columns="_o")
             df["strategy"] = df.strategy.map(lambda s: STRATEGY_LABELS.get(s, s))
             df["pct_of_perfect"] = df.pct_of_perfect.astype(float).round(1)
