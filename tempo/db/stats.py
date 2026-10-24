@@ -19,16 +19,22 @@ def storage_mb(conn: psycopg.Connection) -> float:
 def compress_chunks(
     conn: psycopg.Connection, older_than: str = "7 days", table: str = "grid_raw", vacuum: bool = True
 ) -> int:
-    """Compress (or recompress partially compressed) chunks whose range ends before now - older_than.
+    """Compress uncompressed chunks and recompress partially compressed ones, for chunks whose range ends
+    before now - older_than. Chunks that are fully compressed and untouched are skipped, so this is cheap
+    enough to call after every backfill window.
 
     Returns the number of chunks touched. Rows inserted into a compressed chunk sit uncompressed until
-    this runs again, so the backfill calls it after every dataset.
+    this runs again.
     """
     rows = run_sql(
         conn,
-        "SELECT compress_chunk(c, if_not_compressed => true) "
-        "FROM show_chunks(%s, older_than => %s::interval) c",
-        (table, older_than),
+        "SELECT compress_chunk(c.relid, if_not_compressed => true) "
+        "FROM _timescaledb_catalog.chunk c "
+        "JOIN _timescaledb_catalog.hypertable h ON h.id = c.hypertable_id "
+        "WHERE h.table_name = %s "
+        "  AND c.relid IN (SELECT show_chunks(%s, older_than => %s::interval)) "
+        "  AND ((c.status & 1) = 0 OR (c.status & 8) <> 0)",  # 1 = compressed, 8 = partial (new heap rows)
+        (table, table, older_than),
     )
     # Compression empties the chunk heap but leaves its PK and index pages behind (measured: 3 MB of stale
     # index per chunk vs 64 kB of compressed data). REINDEX on the empty heap drops them to a page each.
@@ -65,6 +71,23 @@ def chunk_residue(conn: psycopg.Connection, table: str = "grid_raw") -> dict:
 
 def _ident(relid: str) -> sql.Composed:
     return sql.Identifier(*relid.split("."))
+
+
+def tiger_storage_mb(client=None, service_id: str | None = None) -> float:
+    """Tiger's own `metrics.storage_mb` for the primary service: the number the 750 MB free-service cap is
+    enforced on. It includes ~340 MB of Tiger overhead that pg_database_size() does not see, so storage
+    guards against Tiger must use this, never storage_mb(conn)."""
+    from tempo.config import settings
+    from tempo.infra.tiger import TigerClient
+
+    service_id = service_id or settings().tiger.primary_service_id
+    if not service_id:
+        raise RuntimeError("TIGER_PRIMARY_SERVICE_ID is not set")
+    client = client or TigerClient.from_env()
+    metrics = client.get(service_id).raw.get("metrics") or {}
+    if metrics.get("storage_mb") is None:
+        raise RuntimeError(f"Tiger service {service_id} returned no metrics.storage_mb")
+    return float(metrics["storage_mb"])
 
 
 def storage_stats(conn: psycopg.Connection, table: str = "grid_raw") -> dict:
