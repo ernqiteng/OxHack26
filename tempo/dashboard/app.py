@@ -24,6 +24,7 @@ from tempo.dashboard.data import (
     HEADLINE_STRATEGY,
     SHIFTS,
     STRATEGY_LABELS,
+    calibration_sentence,
     current_settlement_period,
     pick_source,
 )
@@ -417,11 +418,7 @@ def section_honesty(src) -> None:
         )
         st.altair_chart((line + diag).properties(height=240), width="stretch")
         if cal.attrs.get("n"):
-            cov = cal.attrs.get("coverage_p10_p90")
-            st.caption(
-                f"{cal.attrs['n']:,} settled live forecasts; the p10–p90 band held "
-                f"{100 * cov:.0f}% of actual prices (an honest band holds 80%)."
-            )
+            st.caption(calibration_sentence(cal.attrs["n"], cal.attrs.get("coverage_p10_p90")))
     with c2:
         ui.fig_label("4.3", "By regime: calm weeks vs windy weeks")
         reg = src.backtest_by_regime()

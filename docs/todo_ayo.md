@@ -32,25 +32,25 @@ Status check against [ayo.md](ayo.md). Everything that could be built without te
 
 ### When Girik's poller exists
 
-6. Enable `tempo-poller` on the backend box. Until then the Live tab's prices are a day stale (newest 24 Oct 00:00 UTC).
+6. ~~Enable `tempo-poller` on the backend box~~ done: `tempo-poller` runs on `tempo-backend` (enabled by `create_backend.py --deploy` once `scripts/poll.py` existed).
 
 ### When Ernqi has live decisions
 
-7. Run `scripts/demo_reset.py` until it says GO; confirm the decision with Ernqi. Click it in fork mode on stage hardware. **Gate 3.** Record the first screen capture as backup.
-8. Self-grade line: `DbSource.self_grade()` already calls Ernqi's `self_grade`; check the number renders once cycles exist.
-9. Replay tab on Ernqi's stored windy week; Honesty calibration from real forecasts; forecast bands on Live from `forecasts`.
+7. ~~Run `scripts/demo_reset.py` until it says GO … **Gate 3.**~~ done: decision #441 clicked live in fork mode, 74 s, screenshots `gate3_*.png` (ayo.md header).
+8. Self-grade line: the number exists (100% within one period over 8 cycles, £0.51 mean cost of mistiming, read from Tiger 25 Oct). Still to do: check it renders on the box.
+9. Replay tab on Ernqi's stored windy week: `create_backend.py --deploy` now ships `models/replay_week.*` (it used to skip them, so the box showed the synthetic week); confirm on the box after the next deploy. Honesty calibration from real forecasts: done (390 settled, 77% vs 80%, with a verdict sentence). Forecast bands on Live from `forecasts`: not checked.
 
 ### Stage
 
 10. Rehearse the full path twice from `demo_reset.py` to the closing line; time the fork wait and say the section 11 challenge during it.
 11. Full backup recording, stored off the laptop. Print the script (description.md section 6) with the in-process fallback line.
 12. Demo-day checklist in ayo.md: venue Wi-Fi and hotspot, `demo_reset.py` GO, Live tab open, backup video open, decision confirmed.
-13. **Gate lines:** write Gate 2 and 3 dates at the top of ayo.md.
+13. ~~**Gate lines:** write Gate 2 and 3 dates at the top of ayo.md.~~ done (ayo.md header).
 
 ## Watch-outs
 
 - Only two Tiger services may exist: primary plus the audit's fork. `demo_reset.py` fails if anything else holds the slot.
 - Workers on public IPs require `TEMPO_WORKER_TOKEN`; the laptop's `.env` has it, `create_backend.py --deploy` copies it to the box.
-- Before the demo: `scripts/seed_selftest.py --remove`, then `scripts/demo_reset.py` must say GO.
+- Before the demo: `scripts/seed_selftest.py --remove`, then `scripts/demo_reset.py` must say GO. (The selftest rows were already gone from Tiger on 24 Oct evening: 0 rows.)
 - To ship code changes to the workers, rebuild the image (`scripts/build_worker_image.py`) and recreate the five; the image carries a copy of the repo, not a git checkout.
-- `make lint` is red on main because of teammates' files, not yours; the pre-push hook will complain until Ernqi fixes item 10 in their list.
+- ~~`make lint` is red on main~~: clean on main since PR #16 (`ruff check .` and `ruff format --check .`).
