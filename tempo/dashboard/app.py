@@ -2,8 +2,9 @@
 
 Owner: Ayo. See docs/ayo.md. Run with `make dashboard` or `streamlit run tempo/dashboard/app.py`.
 
-Phase 0: every tab renders from `SyntheticSource`. Phase 1 swaps in `DbSource` for the live tabs and wires the
-Timing audit button to `run_audit(mode='inprocess')`. Phase 2 adds the fork mode toggle and live progress.
+With TEMPO_DATABASE_URL set, every tab reads from `DbSource`; each query that hits a missing or empty table
+falls back to synthetic data and the tab shows a yellow note saying so. The Timing audit button runs
+`run_audit(mode='inprocess')` against real decisions. Phase 2 adds fork mode and live progress.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ import streamlit as st
 from tempo.config import settings
 from tempo.dashboard.data import (
     SHIFTS,
-    SyntheticSource,
     current_settlement_period,
     pick_source,
 )
@@ -25,16 +25,16 @@ st.set_page_config(page_title="Tempo", page_icon="⚡", layout="wide")
 CACHE_TTL = 30
 
 
-@st.cache_resource(ttl=CACHE_TTL)
+@st.cache_resource
 def get_source():
-    source, note = pick_source(settings().database_url)
-    if not isinstance(source, SyntheticSource):
-        # DbSource is incomplete until Phase 1; fall back so the app always renders.
-        try:
-            source.recent_prices()
-        except NotImplementedError:
-            source, note = SyntheticSource(), "DbSource not implemented yet: showing synthetic data"
-    return source, note
+    return pick_source(settings().database_url)
+
+
+def show_notes(src, *methods: str) -> None:
+    for m in methods:
+        note = src.notes.get(m)
+        if note:
+            st.warning(f"{m}: {note}", icon="⚠️")
 
 
 def gbp(x: float | None) -> str:
@@ -94,6 +94,7 @@ def tab_live(src) -> None:
         st.altair_chart(chart, width="stretch")
     if hold:
         st.warning(f"Most recent hold for {hold.target_time:%H:%M} UTC: {hold.reason}")
+    show_notes(src, "recent_prices", "next_forecast", "todays_schedule", "latest_hold")
 
 
 def tab_replay(src) -> None:
@@ -122,6 +123,7 @@ def tab_replay(src) -> None:
         width="stretch",
     )
     st.metric("PnL so far", gbp(float(shown.cum_pnl_gbp.iloc[-1])))
+    show_notes(src, "replay_week")
 
 
 def tab_audit(src) -> None:
@@ -137,9 +139,14 @@ def tab_audit(src) -> None:
     )
     run = st.button("Run timing audit", type="primary", key="audit_run")
 
+    show_notes(src, "recent_decisions")
     if run:
-        st.session_state["audit_result"] = src.audit_rows(chosen)
-        st.session_state["audit_mode_used"] = mode
+        if mode == "forks":
+            st.warning("Fork mode lands in Phase 2; running the same replay in-process.")
+        with st.spinner("Replaying five timelines…"):
+            st.session_state["audit_result"] = src.run_audit(chosen)
+        st.session_state["audit_mode_used"] = "in-process"
+        st.session_state["audit_action"] = decisions.set_index("decision_id").action.get(chosen, "hold")
     rows = st.session_state.get("audit_result")
     if rows is None:
         st.info(
@@ -160,13 +167,23 @@ def tab_audit(src) -> None:
                 gbp(r.pnl_gbp),
                 delta=None if pd.isna(r.pnl_delta_gbp) or shift == 0 else f"{r.pnl_delta_gbp:+.2f}",
             )
-            st.caption(f"{r.worker_id or 'in-process'}")
+            worker = r.worker_id if isinstance(r.worker_id, str) and r.worker_id else "in-process"
+            st.caption(worker)
+    errors = [(r.shift, r.error) for r in rows.itertuples() if isinstance(getattr(r, "error", None), str)]
+    for shift, err in errors:
+        st.error(f"shift {shift:+d} failed: {err}")
     later = rows[rows["shift"] == 1].iloc[0]
     if not pd.isna(later.pnl_delta_gbp):
         verb = "cost" if later.pnl_delta_gbp < 0 else "earned"
-        st.success(f"Charging one period later would have {verb} £{abs(later.pnl_delta_gbp):,.2f}.")
+        doing = {"charge": "Charging", "discharge": "Selling"}.get(
+            st.session_state.get("audit_action"), "Acting"
+        )
+        st.success(f"{doing} one period later would have {verb} £{abs(later.pnl_delta_gbp):,.2f}.")
     elapsed = (rows.finished_at.max() - rows.started_at.min()).total_seconds()
-    st.caption(f"mode: {st.session_state.get('audit_mode_used')}, total elapsed {elapsed:.0f} s")
+    st.caption(
+        f"mode: {st.session_state.get('audit_mode_used')}, total elapsed {elapsed:.1f} s, "
+        f"simulator: {src.sim_name}"
+    )
     st.dataframe(
         rows[["shift", "pnl_gbp", "pnl_delta_gbp", "mode", "worker_id", "fork_service_id"]],
         hide_index=True,
@@ -179,6 +196,7 @@ def tab_audit(src) -> None:
         f"**{sg['pct_within_one_period']:.0f}%** of {sg['n_cycles']} cycles; mean cost of mistiming "
         f"£{sg['mean_cost_of_mistiming_gbp']:.2f} per cycle."
     )
+    show_notes(src, "self_grade")
 
 
 def tab_honesty(src) -> None:
@@ -223,6 +241,7 @@ def tab_honesty(src) -> None:
         f"compressed {100 * (1 - stats['after_bytes'] / stats['before_bytes']):.0f}% "
         f"({stats['ratio']:.1f}×)."
     )
+    show_notes(src, "backtest_summary", "backtest_by_regime", "calibration", "storage_stats")
 
 
 def tab_about() -> None:

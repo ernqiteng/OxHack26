@@ -91,10 +91,15 @@ class SyntheticSource:
     """Deterministic stand-in for the database. `now` is injectable for tests and the replay animation."""
 
     name = "synthetic"
+    sim_name = "synthetic (no replay)"
 
     def __init__(self, now: datetime | None = None, seed: int = 0) -> None:
         self.now = now or utc_now()
         self.seed = seed
+        self.notes: dict[str, str] = {}
+
+    def run_audit(self, decision_id: int) -> pd.DataFrame:
+        return self.audit_rows(decision_id)
 
     # Live tab ---------------------------------------------------------------------------------
     def recent_prices(self, hours: int = 24) -> pd.DataFrame:
@@ -207,7 +212,7 @@ class SyntheticSource:
                     "pnl_delta_gbp": None if failed else round(pnl - base, 2),
                     "mode": "inprocess",
                     "fork_service_id": None,
-                    "worker_id": f"tempo-worker-{i + 1}",
+                    "worker_id": None,
                     "started_at": self.now,
                     "finished_at": self.now + timedelta(seconds=40 + 5 * i),
                 }
@@ -270,21 +275,223 @@ class SyntheticSource:
 
 
 class DbSource:
-    """Real queries against TEMPO_DATABASE_URL. Phase 1 fills it in; same method names as SyntheticSource."""
+    """Real queries against TEMPO_DATABASE_URL, same method names as SyntheticSource.
+
+    Every method degrades on its own: if its table is missing or empty (teammates' parts not landed yet) it
+    returns the synthetic equivalent and records why in `notes[method]`, which the app shows as a banner on
+    that tab. Results are cached for `ttl` seconds (docs/ayo.md: cache queries for 30 s).
+    """
 
     name = "tiger"
 
-    def __init__(self, conn) -> None:
-        self.conn = conn
+    def __init__(
+        self, conn, *, url: str | None = None, ttl: float = 30.0, now: datetime | None = None
+    ) -> None:
+        import threading
 
-    def __getattr__(self, item: str):
-        raise NotImplementedError(f"DbSource.{item} lands in Phase 1 (docs/ayo.md)")
+        from tempo.audit.refsim import resolve_sim
+
+        self.conn = conn
+        self.url = url
+        self.ttl = ttl
+        self.fallback = SyntheticSource(now)
+        self.notes: dict[str, str] = {}
+        self.sim_name = resolve_sim()[1]
+        self._cache: dict[tuple, tuple[float, object]] = {}
+        self._lock = threading.Lock()
+        self._decisions_synthetic = False
+
+    # -- plumbing ---------------------------------------------------------------------------------
+    def _df(self, sql: str, params: tuple = ()) -> pd.DataFrame:
+        import psycopg
+
+        with self._lock:
+            try:
+                cur = self.conn.execute(sql, params)
+            except psycopg.OperationalError:
+                if not self.url:
+                    raise
+                self.conn = psycopg.connect(self.url, connect_timeout=5, autocommit=True)
+                cur = self.conn.execute(sql, params)
+            cols = [d.name for d in cur.description]
+            return pd.DataFrame(cur.fetchall(), columns=cols)
+
+    def _cached(self, key: tuple, fn):
+        import time
+
+        hit = self._cache.get(key)
+        if hit and time.monotonic() - hit[0] < self.ttl:
+            return hit[1]
+        value = fn()
+        self._cache[key] = (time.monotonic(), value)
+        return value
+
+    def _try(self, method: str, fn, fallback, *, empty_ok: bool = False, empty_note: str = "no rows yet"):
+        """Run fn(); on error or (unless empty_ok) an empty result, use fallback() and note why."""
+        try:
+            value = fn()
+        except Exception as exc:  # noqa: BLE001 - a missing table must not break the page
+            self.notes[method] = (
+                f"{type(exc).__name__}: {str(exc).splitlines()[0][:160]}. Showing synthetic data."
+            )
+            return fallback()
+        empty = (isinstance(value, pd.DataFrame) and value.empty) or value is None
+        if empty and not empty_ok:
+            self.notes[method] = f"{empty_note}. Showing synthetic data."
+            return fallback()
+        self.notes.pop(method, None)
+        return value
+
+    def _synthetic(self, method: str, why: str):
+        self.notes[method] = f"{why}. Showing synthetic data."
+        return getattr(self.fallback, method)()
+
+    # -- Live tab ---------------------------------------------------------------------------------
+    def recent_prices(self, hours: int = 24) -> pd.DataFrame:
+        sql = (
+            "SELECT bucket, price, volume FROM prices_hh "
+            "WHERE bucket > (SELECT max(bucket) FROM prices_hh) - make_interval(hours => %s) ORDER BY bucket"
+        )
+        return self._try(
+            "recent_prices",
+            lambda: self._cached(("prices", hours), lambda: self._df(sql, (hours,))),
+            lambda: self.fallback.recent_prices(hours),
+            empty_note="prices_hh is empty",
+        )
+
+    def next_forecast(self, periods: int = 48) -> pd.DataFrame:
+        sql = (
+            "SELECT target_time, p10, p50, p90 FROM forecasts WHERE run_id = 'live' AND decided_at = "
+            "(SELECT max(decided_at) FROM forecasts WHERE run_id = 'live') ORDER BY target_time LIMIT %s"
+        )
+        return self._try(
+            "next_forecast",
+            lambda: self._cached(("forecast", periods), lambda: self._df(sql, (periods,))),
+            lambda: self.fallback.next_forecast(periods),
+            empty_note="no live forecasts yet",
+        )
+
+    def todays_schedule(self) -> pd.DataFrame:
+        sql = (
+            "SELECT target_time, action, mw, expected_spread, reason, run_id FROM decisions "
+            "WHERE run_id = 'live' AND decided_at = "
+            "(SELECT max(decided_at) FROM decisions WHERE run_id = 'live') "
+            "ORDER BY target_time"
+        )
+        empty = pd.DataFrame(columns=["target_time", "action", "mw", "expected_spread", "reason", "run_id"])
+        return self._try(
+            "todays_schedule",
+            lambda: self._cached(("schedule",), lambda: self._df(sql)),
+            lambda: empty,
+            empty_ok=True,
+        )
+
+    def latest_hold(self) -> HoldInfo | None:
+        sql = (
+            "SELECT decided_at, target_time, reason, expected_spread FROM decisions "
+            "WHERE run_id = 'live' AND action = 'hold' ORDER BY decided_at DESC, target_time LIMIT 1"
+        )
+
+        def fetch():
+            df = self._cached(("hold",), lambda: self._df(sql))
+            if df.empty:
+                return None
+            r = df.iloc[0]
+            spread = None if pd.isna(r.expected_spread) else float(r.expected_spread)
+            return HoldInfo(r.decided_at, r.target_time, r.reason or "", spread)
+
+        return self._try("latest_hold", fetch, lambda: None, empty_ok=True)
+
+    # -- Replay tab (Phase 3) ---------------------------------------------------------------------
+    def replay_week(self) -> pd.DataFrame:
+        return self._synthetic("replay_week", "Replay week from backtest_results lands in Phase 3")
+
+    # -- Timing audit tab -------------------------------------------------------------------------
+    def recent_decisions(self, limit: int = 20) -> pd.DataFrame:
+        sql = (
+            "SELECT decision_id, decided_at, target_time, action, mw, reason, run_id FROM decisions "
+            "WHERE run_id = 'live' ORDER BY decided_at DESC, target_time LIMIT %s"
+        )
+        df = self._try(
+            "recent_decisions",
+            lambda: self._df(sql, (limit,)),
+            lambda: self.fallback.recent_decisions(limit),
+            empty_note="no live decisions yet (Ernqi's run_decision, Phase 2); audit runs on synthetic rows",
+        )
+        self._decisions_synthetic = "recent_decisions" in self.notes
+        return df
+
+    def run_audit(self, decision_id: int) -> pd.DataFrame:
+        if self._decisions_synthetic:
+            return self.fallback.run_audit(decision_id)
+        from tempo.audit.orchestrator import run_audit
+
+        rows = run_audit(self.conn, decision_id, mode="inprocess")
+        return pd.DataFrame([{**r.__dict__} for r in rows])
+
+    def self_grade(self) -> dict:
+        def fetch():
+            from tempo.audit.selfgrade import self_grade
+
+            return self_grade(self.conn, since=utc_now() - timedelta(days=30))
+
+        return self._try("self_grade", fetch, self.fallback.self_grade)
+
+    # -- Honesty tab ------------------------------------------------------------------------------
+    _LATEST_RUN = "(SELECT max(run_id) FROM backtest_results)"
+
+    def backtest_summary(self) -> pd.DataFrame:
+        sql = (
+            "SELECT strategy, sum(pnl_gbp) AS pnl_gbp, 100 * sum(pnl_gbp) / NULLIF(sum(perfect_pnl_gbp), 0) "
+            f"AS pct_of_perfect FROM backtest_results WHERE run_id = {self._LATEST_RUN} GROUP BY strategy"
+        )
+
+        def fetch():
+            df = self._cached(("summary",), lambda: self._df(sql))
+            if df.empty:
+                return df
+            order = {s: i for i, s in enumerate(STRATEGIES)}
+            df = df.assign(_o=df.strategy.map(order).fillna(99)).sort_values("_o").drop(columns="_o")
+            df["strategy"] = df.strategy.map(lambda s: STRATEGY_LABELS.get(s, s))
+            df["pct_of_perfect"] = df.pct_of_perfect.astype(float).round(1)
+            return df.reset_index(drop=True)
+
+        return self._try(
+            "backtest_summary", fetch, self.fallback.backtest_summary, empty_note="backtest_results is empty"
+        )
+
+    def backtest_by_regime(self) -> pd.DataFrame:
+        sql = (
+            "SELECT regime, strategy, sum(pnl_gbp) AS pnl_gbp, "
+            "100 * sum(pnl_gbp) / NULLIF(sum(perfect_pnl_gbp), 0) AS pct_of_perfect FROM backtest_results "
+            f"WHERE run_id = {self._LATEST_RUN} AND regime IS NOT NULL GROUP BY regime, strategy"
+        )
+        return self._try(
+            "backtest_by_regime",
+            lambda: self._cached(("regime",), lambda: self._df(sql)),
+            self.fallback.backtest_by_regime,
+            empty_note="no regime rows in backtest_results",
+        )
+
+    def calibration(self) -> pd.DataFrame:
+        return self._synthetic("calibration", "Calibration from Ernqi's reliability table lands in Phase 3")
+
+    def storage_stats(self) -> dict:
+        def fetch():
+            from tempo.db.stats import storage_stats
+
+            return self._cached(("storage",), lambda: storage_stats(self.conn))
+
+        return self._try("storage_stats", fetch, self.fallback.storage_stats)
+
+    def weak_points(self) -> list[str]:
+        return self.fallback.weak_points()
 
 
 def pick_source(
     database_url: str | None, now: datetime | None = None
 ) -> tuple[SyntheticSource | DbSource, str]:
-    """Return (source, note). Falls back to synthetic when the DB is unavailable or DbSource is incomplete."""
+    """Return (source, note). Falls back to synthetic only when the DB itself is unreachable."""
     if not database_url:
         return SyntheticSource(now), "TEMPO_DATABASE_URL not set: showing synthetic data"
     try:
@@ -293,4 +500,4 @@ def pick_source(
         conn = psycopg.connect(database_url, connect_timeout=5, autocommit=True)
     except Exception as exc:  # noqa: BLE001
         return SyntheticSource(now), f"database unreachable ({type(exc).__name__}): showing synthetic data"
-    return DbSource(conn), "connected to Tiger"
+    return DbSource(conn, url=database_url, now=now), "connected to the database"
