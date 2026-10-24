@@ -119,8 +119,12 @@ def write_battery_state(
         cur.execute(
             "DELETE FROM battery_state WHERE run_id = %s AND ts >= %s AND ts <= %s", (run_id, ts[0], ts[-1])
         )
+        # ON CONFLICT: two viewers opening the dashboard at once both run the self-grade replays under the
+        # same run ids; the delete above is not atomic with the insert, so the second writer must upsert.
         cur.executemany(
-            "INSERT INTO battery_state (ts, soc_mwh, cum_pnl_gbp, run_id) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO battery_state (ts, soc_mwh, cum_pnl_gbp, run_id) VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (ts, run_id) DO UPDATE "
+            "SET soc_mwh = EXCLUDED.soc_mwh, cum_pnl_gbp = EXCLUDED.cum_pnl_gbp",
             [(t, float(s), float(c), run_id) for t, s, c in zip(ts, soc, cum, strict=True)],
         )
 

@@ -74,3 +74,44 @@ def test_rerunning_an_audit_does_not_hit_battery_state_key(market):
     for s in (-2, -1, 0, 1, 2):
         assert len(market.state(f"audit-{did}-{s}")) == 48
     assert len(audits(market.conn, did)) == 10  # audits keeps history; one set per run
+
+
+def test_second_writer_between_delete_and_insert_does_not_collide(market):
+    """Two dashboard viewers run the self-grade at once under the same run ids. Viewer B's rows can land
+    between viewer A's DELETE and INSERT; A's insert must then update them, not fail on the primary key."""
+    from tempo.audit.shifts import write_battery_state
+
+    targets_ = targets()
+    soc, cum = np.full(48, 1.0), np.arange(48, dtype=float)
+    write_battery_state(market.conn, "selfgrade-race", targets_, soc, cum)  # viewer B finished first
+
+    class SkipDelete:
+        """Viewer A's connection, as seen after its DELETE already ran (B's rows are now present)."""
+
+        def __init__(self, conn):
+            self.conn = conn
+
+        def cursor(self):
+            real = self.conn.cursor()
+
+            class Cur:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, *a):
+                    real.close()
+
+                def execute(self_inner, sql, params=None):
+                    if sql.lstrip().upper().startswith("DELETE"):
+                        return None
+                    return real.execute(sql, params)
+
+                def executemany(self_inner, sql, rows):
+                    return real.executemany(sql, rows)
+
+            return Cur()
+
+    write_battery_state(SkipDelete(market.conn), "selfgrade-race", targets_, soc * 0.5, cum * 2)
+    rows = market.state("selfgrade-race")
+    assert len(rows) == 48
+    assert rows[0][1] == 0.5 and rows[-1][2] == 94.0  # A's values won, no duplicate-key error
