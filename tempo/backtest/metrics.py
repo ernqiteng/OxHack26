@@ -15,6 +15,9 @@ import pandas as pd
 from tempo.backtest.walkforward import pct_of_perfect
 
 STRATEGY_ORDER = ["simple_rule", "persistence_greedy", "tempo", "tempo_lp", "perfect"]
+# The strategy the dashboard headlines and the weak statements describe: LightGBM + greedy, which is what the
+# live decider runs (scripts/decide.py defaults to GreedyOptimiser). tempo_lp is shown as the LP variant.
+HEADLINE_STRATEGY = "tempo"
 LABELS = {
     "simple_rule": "Simple rule (charge 1am to 5am, sell 5pm to 7pm)",
     "persistence_greedy": "Persistence forecast + same optimiser",
@@ -125,7 +128,7 @@ SHORT_NAMES = {
 
 
 def _main_strategy(strategies) -> str | None:
-    for s in ("tempo", "tempo_lp", "persistence_greedy"):
+    for s in (HEADLINE_STRATEGY, "tempo_lp", "persistence_greedy"):
         if s in strategies:
             return s
     return None

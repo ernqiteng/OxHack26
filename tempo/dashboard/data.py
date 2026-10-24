@@ -33,6 +33,31 @@ STRATEGY_LABELS = {
     "perfect": "Perfect knowledge of the future",
 }
 HEADLINE_STRATEGY = "tempo"  # what the live engine runs (scripts/decide.py defaults to greedy)
+# Must equal tempo.backtest.metrics.HEADLINE_STRATEGY (the weak statements' subject); a unit test checks it.
+# Not imported from there: metrics pulls in the optimisers (~3 s) and the dashboard does not need them.
+
+
+def calibration_sentence(n: int, coverage: float, target: float = 0.80, tolerance: float = 0.02) -> str:
+    """The honesty line under the calibration chart, with a verdict, never just a number.
+
+    The p10-p90 band is an 80% interval. Below target - tolerance it is overconfident (too narrow), above
+    target + tolerance under-confident (too wide). Decisions use p50 only (greedy and LP), so the band's
+    width never changes a trade: this is a statement about honesty, not about money."""
+    held = f"{n:,} settled live forecasts: the p10–p90 band held {100 * coverage:.0f}% of actual prices"
+    if coverage < target - tolerance:
+        verdict = (
+            "slightly overconfident (the band is too narrow)"
+            if coverage >= target - 0.10
+            else "overconfident (the band is too narrow)"
+        )
+    elif coverage > target + tolerance:
+        verdict = "under-confident (the band is too wide)"
+    else:
+        verdict = "about right"
+    return (
+        f"{held} against an {100 * target:.0f}% target: {verdict}. "
+        "Trades use the p50 forecast only, so the band's width never changes a decision."
+    )
 
 
 def utc_now() -> datetime:

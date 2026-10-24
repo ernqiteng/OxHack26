@@ -124,9 +124,9 @@ Click any decision on the dashboard and Tempo:
 
 The same shift analysis also runs automatically on every completed charge-discharge cycle, as in-process backtest shifts rather than a fork, which gives Tempo a running self-grade. Forks are reserved for the on-stage audit:
 
-> "Tempo's timing was within one settlement period of hindsight-optimal on 71% of cycles this month."
+> "Tempo's timing was within one settlement period of hindsight-optimal on 7 of its 8 completed cycles so far (88%); mistiming cost £6.37 a cycle on average."
 
-That line is the product's own honest scorecard on the one thing it exists to do: choosing *when*.
+That line is the product's own honest scorecard on the one thing it exists to do: choosing *when*. Eight cycles is a small sample (live decisions started on 21 Oct 2026), and the dashboard shows the count next to the percentage.
 
 ### Layer 3: Honesty, on screen at all times
 
@@ -134,14 +134,17 @@ Tempo never hides its evaluation. The honesty panel is a permanent part of the d
 
 #### Walk-forward backtest
 
-The model is trained on a window of history and then tested on the weeks that follow, which it has never seen. The window rolls forward and the process repeats. Results are reported against three baselines:
+The model is trained on a window of history and then tested on the weeks that follow, which it has never seen. The window rolls forward and the process repeats: 28 days of training, retrained for every 7-day test week. Results over **100 unseen weeks** (24 Oct 2024 to 24 Oct 2026, run `db-20261024T202144Z`), against three baselines:
 
 | Strategy | Money made | % of perfect foresight |
 |---|---|---|
-| Simple rule ("charge 1am to 5am, sell 5pm to 7pm") | £A | a% |
-| Persistence forecast + same optimiser | £B | b% |
-| **Tempo** (LightGBM forecast + same optimiser) | £C | c% |
-| Perfect knowledge of the future | £D | 100% |
+| Simple rule ("charge 1am to 5am, sell 5pm to 7pm") | £29,265 | 33.1% |
+| Persistence forecast + same optimiser | £46,798 | 52.9% |
+| **Tempo** (LightGBM forecast + same greedy optimiser, what runs live) | £58,711 | **66.4%** |
+| Tempo LP (LightGBM forecast + LP optimiser) | £60,391 | 68.3% |
+| Perfect knowledge of the future | £88,388 | 100% |
+
+No strategy beats perfect foresight in any week (Tempo's best week is 90.2%), and Tempo never loses money in a week (its worst is 31.2%). The headline is Tempo with the greedy optimiser because that is what makes the live decisions; the LP variant captures a little more and is shown beside it.
 
 The baselines matter. The simple rule tests whether forecasting adds anything over a fixed schedule. The persistence row isolates the value of the model from the value of the optimiser, because both use the same optimiser. Perfect foresight sets the ceiling.
 
@@ -151,7 +154,7 @@ Raw pounds vary wildly between a calm week and a volatile one. A system can make
 
 #### Also on screen
 
-- **Calibration.** Does the p10–p90 band actually contain about 80% of real prices, as a p10–p90 band should? If it contains 60%, the model is overconfident and its stated uncertainty cannot be trusted.
+- **Calibration.** The p10–p90 band is an 80% interval, so it should contain about 80% of real prices. On 405 settled live forecasts it holds 40%: the band is much too narrow, the model is overconfident, and the dashboard says so. Trades use the p50 forecast only, so the band's width never changes a decision; it is shown so a judge can see how honest the uncertainty is.
 - **Regime breakdown.** Performance split into calm weeks vs windy weeks. We expected prediction to matter more in windy weeks; over our 100 unseen weeks it did not: Tempo's lead over persistence is 16 points on calm weeks and 12 on windy ones, and the panel shows that.
 - **Where it's weak.** If the simple rule nearly matches Tempo in summer, when spreads are small, we show that too. The point of the panel is that a judge can see the limits without having to ask.
 
@@ -223,7 +226,7 @@ Model training is not a Vultr job. LightGBM trains on a laptop CPU in about 90 s
 | 20s | Hook | "Electricity is cheap at 3am and expensive at 6pm. A battery can make money in between. The hard part is *when*." |
 | 35s | Live view | Current settlement period, next 24h forecast with uncertainty bands, today's schedule, and a recent hold with its reason: "expected spread didn't cover the 10% efficiency loss." |
 | 50s | Replay | Rewind to a windy week, play it forward: forecast vs reality, battery charging and selling, £ ticking up. |
-| 40s | Timing audit | Click a decision. Tiger forks the live database, five Vultr workers replay five timelines in it in parallel, side-by-side result: "an hour later would have cost £31." Then the running self-grade. While the fork spins up (~40 s), tell the challenge from section 11. |
+| 40s | Timing audit | Click a decision. Tiger forks the live database, five Vultr workers replay five timelines in it in parallel, side-by-side result: "an hour later would have cost £34.81" (decision #1353). Then the running self-grade. While the fork spins up (~40 s), tell the challenge from section 11. |
 | 30s | Honesty panel | Backtest table, % of perfect foresight, calibration, plain statement of where it's weak. If asked why the LP row beats the live Tempo row: "two points over a hundred weeks, simple first, it's one flag to switch." |
 | 5s | Close | "Most projects stop at a prediction. We turned it into a decision, and then proved whether we made it at the right time." |
 

@@ -3,6 +3,7 @@
 Gate reached: _(write date/time here as you pass each gate)_
 - Gate 0 (Phase 0): 2026-10-24, fixture and Battery contract merged to `main` (PR #5).
 - Gate 2 (Phase 1): 2026-10-24 16:30 UTC, see the note under Phase 1's exit.
+- Gate 3 (Phase 2): 2026-10-24 20:21 UTC. Tempo row on 100 unseen weeks (run `db-20261024T202144Z`: tempo 66.4%, tempo_lp 68.3% of perfect, no week above 100%); live `run_decision` running on the backend (decision #441 audited in fork mode, see a.md); calibration on 390 settled live forecasts: 77% inside the p10–p90 band. _(Recorded by Girik from the repo and Tiger on 25 Oct.)_
 
 You own the battery, the optimiser, the forecaster, the walk-forward backtest and every honesty metric. Everything you produce is a number that a judge will read, so every number has a known-answer test behind it.
 
