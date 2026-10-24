@@ -183,11 +183,12 @@ def run_job(client, frames_dir: Path, out_dir: Path) -> None:
     ssh(
         ip,
         KEY_PATH,
-        "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq"
-        " && apt-get install -y -qq python3-venv >/dev/null"
+        # Idempotent: a rerun on the same box skips what the first run installed.
+        "if [ ! -x /opt/py312/bin/python ]; then export DEBIAN_FRONTEND=noninteractive;"
+        " apt-get update -qq; apt-get install -y -qq python3-venv >/dev/null"
         " && python3 -m venv /opt/uv-venv && /opt/uv-venv/bin/pip install -q uv"
         " && /opt/uv-venv/bin/uv venv -q -p 3.12 /opt/py312"
-        f" && /opt/uv-venv/bin/uv pip install -q --python /opt/py312/bin/python torch --index-url {index}"
+        f" && /opt/uv-venv/bin/uv pip install -q --python /opt/py312/bin/python torch --index-url {index}; fi"
         f" && /opt/uv-venv/bin/uv pip install -q --python /opt/py312/bin/python -e {REMOTE}",
         timeout=2400,
     )
