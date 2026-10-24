@@ -1,0 +1,19 @@
+# Streamlit dashboard on the backend box, port 8501.
+[Unit]
+Description=Tempo Streamlit dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tempo
+WorkingDirectory=/opt/tempo
+EnvironmentFile=/opt/tempo/.env
+ExecStart=/opt/tempo/.venv/bin/streamlit run tempo/dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/tempo/dashboard.log
+StandardError=append:/var/log/tempo/dashboard.log
+
+[Install]
+WantedBy=multi-user.target

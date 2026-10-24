@@ -1,0 +1,20 @@
+# Girik's live poller. Install: sudo cp deploy/systemd/tempo-poller.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tempo-poller
+[Unit]
+Description=Tempo Elexon live poller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tempo
+WorkingDirectory=/opt/tempo
+EnvironmentFile=/opt/tempo/.env
+ExecStart=/opt/tempo/.venv/bin/python scripts/poll.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/tempo/poller.log
+StandardError=append:/var/log/tempo/poller.log
+
+[Install]
+WantedBy=multi-user.target

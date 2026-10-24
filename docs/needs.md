@@ -17,9 +17,9 @@ Tiger's own fork docs give two different numbers:
 | Free service | Copy-on-write ("Fluid Storage"), zero-copy | **30 to 90 seconds** |
 | Standard (paid) service | Backup restore + WAL replay | **5 to 20+ minutes** |
 
-The "click a decision, five forks spin up live" demo only works if the live database is a **free service**. A standard service fork would take longer than the whole demo. Free services are in beta, run only in `us-east-1`, and exclude tiering, replication, connection pooling, VPC and metrics. You can fork free → free or free → standard, but **not** standard → free. Fork is only allowed when the parent is in `READY` or `PAUSED` state.
+The "click a decision, fork spins up live" demo only works if the live database is a **free service**. (Originally five forks per click; the free tier allows only 2 services per project, so it is one fork per click. See B2 and description.md section 11.) A standard service fork would take longer than the whole demo. Free services are in beta, run only in `us-east-1`, and exclude tiering, replication, connection pooling, VPC and metrics. You can fork free → free or free → standard, but **not** standard → free. Fork is only allowed when the parent is in `READY` or `PAUSED` state.
 
-**Decision for Gate 0:** run the primary Tempo database as a free service so forks are seconds, not minutes. If free-service storage turns out too small for two years of raw data (limit **unverified**, see B2), keep raw history on a standard service and keep a slim "decision state" free service that forks fast. Fallback if forks are slow on the day: pre-create the five forks before the demo and have the click dispatch workers into existing forks.
+**Decision for Gate 0:** run the primary Tempo database as a free service so forks are seconds, not minutes. If free-service storage turns out too small for two years of raw data (limit **unverified**, see B2), keep raw history on a standard service and keep a slim "decision state" free service that forks fast. Fallback if forks are slow on the day: pre-create the fork before the demo and have the click dispatch workers into it.
 
 **Also:** "run the audit automatically on every completed cycle" implies several forks per day. Do the automatic self-grade as in-process backtest shifts (no forks) and reserve real forks for the on-stage click. Update section 3, Layer 2 accordingly.
 
@@ -73,13 +73,13 @@ Tested and confirmed: `/datasets/{X}`, `/balancing/pricing/market-index` and `/b
 
 ### B2. Tiger Cloud: decisions and unknowns to resolve at Gate 0
 
-- [ ] Create a **free service** as the primary database (fast forks). Region will be `us-east-1`.
-- [x] **Storage cap (verified 24 Oct 2026, Ernqi, Console):** free service is **750 MiB**, with ~390 MiB free before the backfill. Measured on a local 2-year load of all six datasets: ~15 B/row compressed (~45 MB for 2.9M rows) once chunks are compressed, reindexed and vacuumed; the transient peak during a load is higher (dead tuples from recompression), so `scripts/backfill.py` compresses and vacuums after every dataset and takes `--max-storage-mb` to abort before the service goes read-only. Still unverified: how many free services one project may hold. You need headroom for the primary plus **five** forks, and each fork is its own service with its own compute.
-- [ ] Confirm `timescaledb` extension version and that `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)` and hierarchical aggregates work on the free tier (expected yes, **unverified** on free specifically).
-- [ ] Confirm compression / columnstore policies are allowed on the free tier (**unverified**).
-- [ ] Time one fork end to end with `fork_strategy: "NOW"` and one with `"LAST_SNAPSHOT"` and record the numbers. `LAST_SNAPSHOT` is faster but can be up to an hour stale; `NOW` takes a fresh snapshot. For the timing audit `NOW` is what you want.
-- [ ] Note the fork response: it returns `service_id`, `initial_password`, `endpoint.host`, `endpoint.port` and `status`. Poll `GET /projects/{project_id}/services/{service_id}` until `status == "READY"` before connecting.
-- [ ] Delete forks after each audit: `DELETE /projects/{project_id}/services/{service_id}`.
+- [x] Create a **free service** as the primary database (fast forks). Region will be `us-east-1`. **Done 2026-10-24:** `db-40426`, service ID `g7kw81aat8`, project `hpcbhmyhmj`.
+- [x] Free-service storage cap: **750 MiB** (Console pricing panel, shared compute, $0/hr). **Already 339 MB used on an empty database** (API `metrics.storage_mb`), so only ~410 MiB is left for data. Compression is on from the start (schema.sql). **Full NDF history confirmed** (Girik + Ernqi, 24 Oct): a local 2-year load of all six datasets (3.32M rows, 730/730 days each) is **65.5 MiB** `pg_database_size` once chunks are compressed, reindexed and vacuumed (~14 B/row). FUELINST stays skipped. **Two storage numbers, do not mix them up:** the cap is enforced on Tiger's API `metrics.storage_mb`, which includes the ~340 MB baseline; `pg_database_size` does not (at the pause: `storage_mb` 515 vs `pg_database_size` 147 MiB). Any storage guard must read `storage_mb`. **Tiger backfill paused 24 Oct** with MID, DISEBSP, INDO, WINDFOR, FUELHH complete and NDF at 4/13 windows, because the loader compressed only after each whole dataset and the remaining NDF windows would have sat uncompressed past the cap; it resumes (via `ingest_log`) once compression runs per window. **Free services per project: 2** (verified 2026-10-24, Ayo): primary + one fork works; a third service gets `403 ENTITLEMENT_ERROR "You have reached your free service limit"`. Five forks per audit is impossible on this account, so the timing audit defaults to one fork per audit with the five timelines replayed inside it under their own run_ids (`TEMPO_AUDIT_FORKS=shared`). Measured: fork READY 36 to 42 s, five replays +1.3 s, an immediate second audit succeeds (the deleted fork frees its slot in time). `per_shift` stays available if Tiger raises the limit.
+- [x] Confirm `timescaledb` extension version and that `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)` and hierarchical aggregates work on the free tier. **Verified 2026-10-24:** PostgreSQL 18.6, TimescaleDB 2.31.0; a 1h cagg and a 1d cagg built on top of it both work. Drop hierarchical caggs top-down (1d before 1h), `DROP TABLE ... CASCADE` won't do it.
+- [x] Confirm compression / columnstore policies are allowed on the free tier. **Verified:** `ALTER TABLE ... SET (timescaledb.enable_columnstore = true)`, `compress_chunk()`, and `CALL add_columnstore_policy(...)` all work. Note `add_columnstore_policy` is a procedure in 2.31: use `CALL`, not `SELECT`.
+- [x] Time one fork end to end with `fork_strategy: "NOW"` and one with `"LAST_SNAPSHOT"` and record the numbers. `LAST_SNAPSHOT` is faster but can be up to an hour stale; `NOW` takes a fresh snapshot. For the timing audit `NOW` is what you want. **Measured 2026-10-24 with `scripts/time_fork.py` on an empty database:** `NOW` 34.8s to READY, `LAST_SNAPSHOT` 25.9s (API accepts the request in ~1s, fork starts `QUEUED`). Re-run after the backfill to confirm it holds with real data.
+- [x] Note the fork response: it returns `service_id`, `initial_password`, `endpoint.host`, `endpoint.port` and `status`. Poll `GET /projects/{project_id}/services/{service_id}` until `status == "READY"` before connecting. **Verified:** status goes `QUEUED` → `READY`.
+- [x] Delete forks after each audit: `DELETE /projects/{project_id}/services/{service_id}`. **Verified:** works, `scripts/time_fork.py` deletes its fork by default.
 
 Fork request body (verified from the REST reference):
 
@@ -110,7 +110,8 @@ All under `https://data.elexon.co.uk/bmrs/api/v1`. All return JSON. Use `/stream
 Quirks to code around:
 
 - **7-day cap** on every non-stream endpoint. Stream endpoints returned 60 days and 1 year without complaint, but keep bulk calls to ~30 to 90 days each so a single failure is cheap to retry.
-- **N2EX MID rows with zero price/volume.** Filter to `APXMIDP`, or drop rows with `volume == 0`.
+- **N2EX MID rows with zero price/volume.** Filter to `APXMIDP`, or drop rows with `volume == 0`. Do both: APX alone still had 12 zero-volume rows in the year to 2026-10-24.
+- **`settlementPeriod` is UK local time.** In BST, `startTime 00:00Z` is SP 3 (SP 1 is 23:00Z the previous day). The year of MID contained one SP 49 and one SP 50 (26 Oct 2025 clock change). Another reason to key on `startTime`.
 - **Settlement periods 49 and 50** exist on clock-change days (the API notes this). October 25 2026 is a clock-change day in the UK, which is during OxHack. Key rows on `startTime` (UTC), not `(settlementDate, settlementPeriod)`.
 - **NDF volume.** Two years of NDF is about 30 MB per 60 days ≈ 360 MB JSON. Either load only the latest forecast per `startTime` published before each decision time, or load it all and let compression handle it. It is the dataset that makes the "millions of rows, compressed Y%" line true.
 - **WINDFOR is hourly.** Forward-fill or interpolate to half-hours.
@@ -120,9 +121,9 @@ Quirks to code around:
 ### B4. Vultr: decisions and unknowns to resolve at Gate 0
 
 - [ ] **Account limits.** Vultr caps the number of instances and spend on new accounts, raised only via a limit-increase request that support reviews manually. Check Billing → Limits on day one. You need at least **5 worker instances + 1 backend** running at once. Request an increase immediately if the cap is lower.
-- [ ] **Region.** Pick one close to the Tiger service (`us-east-1` for a free service → Vultr New Jersey `ewr`) to keep fork-to-worker latency low. The venue is in Oxford, so the dashboard backend is better in London (`lhr`); workers can be in `ewr`.
+- [x] **Region.** Decided: workers `ewr`, backend `lhr` (B8 item 4). Pick one close to the Tiger service (`us-east-1` for a free service → Vultr New Jersey `ewr`) to keep fork-to-worker latency low. The venue is in Oxford, so the dashboard backend is better in London (`lhr`); workers can be in `ewr`.
 - [x] **GPU availability (verified 24 Oct 2026 via API):** `GET /v2/plans?type=vcg` returns three NVIDIA L40S plans ($1.54 to $6.15/h) and **every one has an empty `locations` list**, i.e. no stock or no quota for this account anywhere. **Decision: train on CPU**, per the risk table; the Vultr story is the worker pool, parallel backtests and hosting.
-- [x] **Boot timing (verified 24 Oct 2026):** `vc2-1c-1gb` ($5/mo, $0.0068/h) in `lhr`, Ubuntu 24.04 (`os_id` 2284): created → `active/running/ok` in **39 s**, SSH port open at **78 s**. API key confirmed working (`/v2/account` shows the $105 credit as balance −105). `lhr`, `ewr`, `ams`, `fra`, `cdg` all available; the sub-$5 plans (`vc2-1c-0.5gb*`) are not offered in `lhr`.
+- [x] **Boot timing (verified 24 Oct 2026):** `vc2-1c-1gb` ($5/mo, $0.0068/h) in `lhr` (the backend region; workers go in `ewr` per the region decision, expect similar), Ubuntu 24.04 (`os_id` 2284): created → `active/running/ok` in **39 s**, SSH port open at **78 s**. API key confirmed working (`/v2/account` shows the $105 credit as balance −105). `lhr`, `ewr`, `ams`, `fra`, `cdg` all available; the sub-$5 plans (`vc2-1c-0.5gb*`) are not offered in `lhr`.
 - [ ] **Pre-warm pool.** Measured boot is ~40 s to running and ~80 s to SSH, before any cloud-init; still too slow to create on click. Create the 5 workers before the demo, keep them running, and have the click trigger a *job* via the API (or a tiny HTTP call to each worker) rather than instance creation. Still show the real Vultr API being called (for example `GET /v2/instances` to pick an idle worker, or a snapshot-based create that was started earlier).
 - [ ] **Worker image.** Build one worker, snapshot it (`POST /v2/snapshots` with `instance_id`), and create the pool from the snapshot with `snapshot_id` plus `user_data` (base64 cloud-init) that injects the Tiger credentials.
 - [ ] **Cost sanity.** Smallest shared-CPU plans are roughly $0.01/hour each. Five workers for 36 hours is a few dollars.
@@ -209,9 +210,18 @@ MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
 
 ### B8. Gate 0 checklist (do these in the first hour)
 
-1. [ ] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it.
+1. [x] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it. Cap 750 MiB (339 MB used empty, see B2). Forks: 34.8s `NOW`, 25.9s `LAST_SNAPSHOT`.
 2. [ ] Vultr: create API key, check account instance limit, list GPU plans, deploy one tiny instance and time boot-to-ready.
-3. [ ] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3.
-4. [ ] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region.
-5. [ ] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date).
-6. [ ] Put `.env.example` in the repo with every variable from B6.
+3. [x] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3. **Done 2026-10-24, shapes match.** Both return a bare JSON list (no `data` wrapper), newest first. MID 1 year APX: 17,521 rows, 2.8 MB, 6.9s. NDF 1 week: 19,768 rows, 3.4 MB, 8.7s, 334 publishes (every ~30 min), all `boundary: "N"`. Extrapolates to ~2.1M rows / ~350 MB JSON for 2 years, matching B3.
+4. [x] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region. **Decided 2026-10-24:**
+   - **Price:** APX MID (`dataProviders=APXMIDP`), dropping `volume == 0` rows.
+   - **δ = 10 min**, so `available_at = startTime + 40 min`. Shown in the honesty panel as an assumption.
+   - **Battery:** 2 MWh, 1 MW, 90% round-trip (split as √0.9 each way), £20 per full cycle, start at 1 MWh (50% SoC).
+   - **Vultr region:** workers in `ewr` (New Jersey, next to Tiger `us-east-1`), dashboard backend in `lhr` (London).
+   - All match `.env.example`, `docs/plan.md` (`Battery`) and `docs/description.md`.
+5. [x] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date). **Checked 2026-10-24** against real MID for the last clock change (26 Oct 2025), saved as `tests/fixtures/elexon_samples/mid_2025-10-26_clock_change.json`: 50 rows, 50 distinct `startTime`, SP 1 to 50, no collisions. The design handles it (schema keys on UTC `start_time`, girik.md says never derive `start_time` from SP). Ingest code is still a stub, so `tests/unit/test_clock_change.py` (girik.md) must run against this fixture once `normalise` exists. Rules for everyone:
+   - **Never compute a settlement period from the UTC clock.** It mismatched all 50 rows that day, and is off by 2 every day in BST. SP = half-hours since UK local midnight + 1. Fixed in ayo.md (dashboard Live tab).
+   - **Horizons are 48 half-hours from now, not "one settlement day".** A clock-change day has 46 or 50 periods.
+   - **`ZoneInfo("Europe/London")` fails on Windows without the `tzdata` package.** Added to `pyproject.toml`.
+   - **Say which clock local-time rules use.** `simple_rule` (charge 01:00 to 05:00, discharge 17:00 to 19:00) and features like `hour` / `period_of_day` should use UK local time, or state UTC explicitly.
+6. [x] Put `.env.example` in the repo with every variable from B6. **Checked 2026-10-24:** all 17 B6 variables present, plus the test DB URL and `TEMPO_LIVE`.

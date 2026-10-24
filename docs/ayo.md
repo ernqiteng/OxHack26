@@ -49,7 +49,7 @@ Timings written down. Clients merged. Dashboard skeleton runs locally with `stre
    - Pure function of the database contents: same inputs, same output, every time.
 2. `tempo/audit/orchestrator.py::run_audit(conn, decision_id, mode='inprocess') -> list[AuditRow]`: for shifts −2..2, call `replay_shift` with `run_id = f'audit-{decision_id}-{shift}'`, compute `pnl_delta_gbp = pnl[shift] - pnl[0]`, write `audits` rows. Phase 1 supports only `mode='inprocess'`.
 3. Dashboard:
-   - **Live tab:** current settlement period (computed from UTC now), latest 24 h of `prices_hh`, today's schedule from `decisions` where `run_id='live'` (empty until Phase 2), most recent hold with reason.
+   - **Live tab:** current settlement period (count half-hours since UK local midnight + 1, using `Europe/London`; **not** from the UTC clock, which is off by 2 in BST and wrong all day on clock-change days, see needs.md B8 item 5), latest 24 h of `prices_hh`, today's schedule from `decisions` where `run_id='live'` (empty until Phase 2), most recent hold with reason.
    - **Honesty tab:** `backtest_results` summary table (Ernqi's `summary`), with the four rows from description.md.
    - **Timing audit tab:** pick a decision, button runs `run_audit(mode='inprocess')`, renders five columns with PnL and delta, real decision highlighted.
    - Reads from Tiger via `TEMPO_DATABASE_URL`; cache queries for 30 s.
@@ -77,23 +77,23 @@ Dashboard on the backend box shows Girik's real live period and Ernqi's real bac
 2. Worker image: build one instance, install the repo and service, snapshot it. Create 5 workers from the snapshot with tag `tempo-worker` and labels `tempo-worker-1..5`. Write the snapshot id and plan to `.env`.
 3. `TigerClient` completion: `fork` returns `Service` with `endpoint.host/port` and `initial_password`; `connection_url(service)` builds the DSN; `delete_all_forks(prefix='audit-')` for cleanup.
 4. `run_audit(mode='fork')`:
-   - Fork the primary service five times concurrently (`asyncio` + `httpx.AsyncClient`), names `audit-{decision_id}-{shift}`.
-   - `wait_ready` each; as each becomes ready, `pick_idle` a worker and `POST /replay` with that fork's DSN.
+   - **Changed 2026-10-24:** the Tiger free tier allows only 2 services per project, so the default is **one fork per click** (`audit-{decision_id}-all`) with the five shifts replayed inside it in parallel under run ids `audit-{decision_id}-{shift}` (`TEMPO_AUDIT_FORKS=shared`). The original layout, five concurrent forks named `audit-{decision_id}-{shift}`, is still available as `TEMPO_AUDIT_FORKS=per_shift`. See description.md section 11.
+   - `wait_ready` the fork; then for each shift take an idle worker and `POST /replay` with the fork's DSN.
    - Collect results; write `audits` rows with `mode='fork'`, `fork_service_id`, `worker_id`, timings.
-   - Delete the forks in `finally`, even on failure.
+   - Delete the fork in `finally`, even on failure, plus a sweep by name for anything left behind.
    - Per-shift timeout (default 180 s). A failed shift writes an `audits` row with `pnl_gbp = NULL` and the view shows "failed" for that column; the other four still render.
 5. Dashboard Timing audit tab: mode toggle (in-process / forks), live progress per shift ("forking… ready… replaying on tempo-worker-3… £-14.20"), total elapsed time, and the sentence "charging one period later would have cost £X".
 
 ### Tests
 
-- `tests/db/test_fork_equals_inprocess.py` (the key test; Docker only, no cloud): simulate a "fork" by `pg_dump`/restore or by `CREATE DATABASE fork TEMPLATE tempo` on the local Docker, call the worker's `replay_shift` code path against the copy via the FastAPI `TestClient`, assert the PnL equals `run_audit(mode='inprocess')` to the penny for all five shifts.
-- `tests/unit/test_orchestrator_fake_clients.py`: fake `TigerClient` and fake workers; five forks created with the right names, each deleted at the end, including when one worker raises; the failed shift row has `pnl_gbp IS NULL`; the elapsed time per shift is recorded.
+- `tests/db/test_fork_equals_inprocess.py` (the key test; Docker only, no cloud): simulate a "fork" by `pg_dump`/restore or by `CREATE DATABASE fork TEMPLATE tempo` on the local Docker, call the worker's `replay_shift` code path against the copy via the FastAPI `TestClient`, assert the PnL equals `run_audit(mode='inprocess')` to the penny for all five shifts, in both fork layouts.
+- `tests/unit/test_orchestrator_fake_clients.py`: fake `TigerClient` and fake workers; in both layouts the fork(s) are created with the right names and deleted at the end, including when one worker raises; the failed shift row has `pnl_gbp IS NULL`; the elapsed time per shift is recorded.
 - `tests/unit/test_worker_api.py` (`TestClient`): `/health` 200; `/replay` with a bad DSN returns 500 with a message, not a hang (timeout 10 s).
-- `tests/live/test_full_audit.py` (`@pytest.mark.live`): one real `run_audit(mode='fork')` on Tiger with the real pool; asserts five rows, no forks left behind, total time under 180 s. Run it once at Phase 2 exit and once at Gate 5.
+- `tests/live/test_full_audit.py` (`@pytest.mark.live`): real `run_audit(mode='fork')` on Tiger with the real pool, run twice back to back; asserts five rows, no forks left behind, total time under 180 s. Run it once at Phase 2 exit and once at Gate 5.
 
 ### Exit (Gate 3, with Ernqi)
 
-Click a real decision, five forks, five workers, five numbers, under two minutes, forks cleaned up. Record a screen capture now as the first backup.
+Click a real decision, one fork, five workers, five numbers, under two minutes, fork cleaned up. Record a screen capture now as the first backup.
 
 ---
 
