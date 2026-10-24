@@ -88,6 +88,7 @@ class Settings:
     tiger: TigerSettings
     vultr: VultrSettings
     live: bool
+    audit_forks: str = "shared"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -121,6 +122,7 @@ class Settings:
                 base_url=env("VULTR_BASE_URL", "https://api.vultr.com/v2"),
             ),
             live=env("TEMPO_LIVE", "0") == "1",
+            audit_forks=env("TEMPO_AUDIT_FORKS", "shared"),
         )
 
 
