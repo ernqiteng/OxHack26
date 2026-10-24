@@ -251,6 +251,9 @@ class SyntheticSource:
             }
         )
 
+    def backtest_weeks(self) -> int | None:
+        return 12
+
     def backtest_by_regime(self) -> pd.DataFrame:
         rows = []
         for regime, scale in (("calm", 0.6), ("windy", 1.4)):
@@ -514,6 +517,15 @@ class DbSource:
         return self._try(
             "backtest_summary", fetch, self.fallback.backtest_summary, empty_note="backtest_results is empty"
         )
+
+    def backtest_weeks(self) -> int | None:
+        sql = f"SELECT count(DISTINCT week_start) FROM backtest_results WHERE run_id = {self._LATEST_RUN}"
+
+        def fetch():
+            n = int(self._cached(("weeks",), lambda: self._df(sql)).iloc[0, 0] or 0)
+            return n or None
+
+        return self._try("backtest_weeks", fetch, self.fallback.backtest_weeks, empty_note="no backtest rows")
 
     def backtest_by_regime(self) -> pd.DataFrame:
         sql = (

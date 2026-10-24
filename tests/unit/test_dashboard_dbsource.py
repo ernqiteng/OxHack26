@@ -43,10 +43,10 @@ def test_app_renders_with_broken_db_and_shows_notes(monkeypatch):
     )
     at.run()
     assert not at.exception, [e.value for e in at.exception]
-    assert any("recent_prices" in w.value for w in at.tabs[0].warning)
+    assert any("recent_prices" in w.value for w in at.warning)
     at.button(key="audit_run").click().run()
     assert not at.exception, [e.value for e in at.exception]
-    assert len(at.tabs[2].metric) >= 5
+    assert sum(m.label == "PnL" for m in at.metric) == 5
 
 
 def test_failed_shift_renders_as_failed(monkeypatch):
@@ -64,10 +64,10 @@ def test_failed_shift_renders_as_failed(monkeypatch):
     at.radio(key="audit_mode").set_value("in-process").run()
     at.button(key="audit_run").click().run()
     assert not at.exception, [e.value for e in at.exception]
-    audit = at.tabs[2]
+    audit = at
     assert any(m.value == "failed" for m in audit.metric)
     assert any("shift +2 failed" in e.value for e in audit.error)
-    assert any("one period later" in s.value for s in audit.success)
+    assert any("would have" in h.value or "made no difference" in h.value for h in audit.subheader)
 
 
 @pytest.mark.parametrize("value", [pd.DataFrame(), None])

@@ -118,3 +118,33 @@ class CompletedJob:
 
     def log_lines(self, last: int = 14) -> list[str]:
         return self.progress.log_lines()[-last:]
+
+
+SHIFT_PHRASE = {-2: "an hour earlier", -1: "30 minutes earlier", 1: "30 minutes later", 2: "an hour later"}
+ACTION_VERB = {"charge": "Charging", "discharge": "Selling", "hold": "Acting"}
+
+
+def hero_sentence(rows: pd.DataFrame, action: str | None) -> str | None:
+    """The one line the presenter reads (docs/ui.md 5.3). Names the worst of the four shifts; adds
+    "Tempo picked the best of the five" only when shift 0 is the maximum. If a shift beats the real
+    decision, says so plainly: honesty is the brand."""
+    verb = ACTION_VERB.get(action or "", "Acting")
+    deltas = {
+        int(r.shift): float(r.pnl_delta_gbp)
+        for r in rows.itertuples()
+        if int(r.shift) != 0 and r.pnl_delta_gbp is not None and not pd.isna(r.pnl_delta_gbp)
+    }
+    if not deltas:
+        return None
+    best_shift, best = max(deltas.items(), key=lambda kv: kv[1])
+    worst_shift, worst = min(deltas.items(), key=lambda kv: kv[1])
+    if best > 0.005:
+        return (
+            f"{verb} {SHIFT_PHRASE[best_shift]} would have earned £{best:,.2f} more. Tempo mistimed this one."
+        )
+    if worst < -0.005:
+        return (
+            f"{verb} {SHIFT_PHRASE[worst_shift]} would have cost £{-worst:,.2f}. "
+            "Tempo picked the best of the five."
+        )
+    return "Shifting this decision by up to an hour would have made no difference."
