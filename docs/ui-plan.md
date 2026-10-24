@@ -223,7 +223,7 @@ availability-time stamping and the stated MID delay.
 | # | Toven slide | Our slide (eyebrow / h3) | Illustration card |
 |---|---|---|---|
 | 0 | Overview grid of 6 tiles | `WHAT TEMPO DOES` / **Prediction is the easy part. Timing is the product.** Tiles: Forecast, Decide, Hold, Timing audit, Honesty, *More coming* (dashed) | tiles are lucide: `trending-up`, `scale`, `pause`, `git-fork`, `shield-check`, `ellipsis` |
-| 1 | Trade reconstruction | `FORECAST` / **48 half-hours ahead, with its doubt attached.** bullets: persistence baseline, LightGBM, p10/p50/p90, neural net only if it earns its place | price curve with a band that widens with horizon (`drawLine` then `fill` fade) |
+| 1 | Trade reconstruction | `FORECAST` / **48 half-hours ahead, with its doubt attached.** bullets: persistence baseline, LightGBM, p10/p50/p90 | price curve with a band that widens with horizon (`drawLine` then `fill` fade) |
 | 2 | eComms surveillance | `DECIDE` / **Charge, sell, or deliberately do nothing.** bullets: cost gate (10% loss + degradation), greedy then LP, holds logged with a reason | three inputs (forecast, SoC, costs) → hub → `charge / sell / hold` outputs, `flow` edges |
 | 3 | Horizon scanning | `TIMING AUDIT` / **Run the same decision an hour earlier and an hour later.** bullets: five Tiger forks, Vultr workers, £ delta, forks deleted after | five vertical timeline columns popping in with `popIn`, middle one brand-filled, `ping` on it |
 | 4 | Trade monitoring | `SELF-GRADE` / **Within one period of hindsight on 71% of cycles.** (number from the DB at build time) | signal lines converging on a triangle like Toven's alert, recoloured: late/early shifts fade, centre holds |

@@ -53,7 +53,6 @@ Tested and confirmed: `/datasets/{X}`, `/balancing/pricing/market-index` and `/b
 | Tiger hypertables, continuous aggregates, hierarchical aggregates, compression | Standard TimescaleDB features, all current. Hierarchical aggregates (aggregate on aggregate) are supported. The compression API is now called "columnstore" in docs newer than TimescaleDB 2.18; both names work. |
 | Tiger zero-copy forks via API | **Confirmed.** `POST /projects/{project_id}/services/{service_id}/forkService`. See A1 for the speed caveat. |
 | Vultr workers provisioned via API | **Confirmed.** Bearer-token REST API, 30 requests/second per IP. See B4 for account-limit caveat. |
-| Vultr GPU for neural net | **Unverified.** GPU plan availability and quota on a new account could not be confirmed. The description already handles this ("train on CPU if not"). |
 | "X million rows" on screen | **Realistic.** See B3 for row estimates (about 10 million rows over two years if FUELINST is included). |
 | LightGBM quantiles p10/p50/p90 | Standard: three LightGBM models with `objective="quantile"` and `alpha` 0.1/0.5/0.9. |
 | cvxpy LP, 48 periods | Trivial problem size, solves in milliseconds with the default solver. |
@@ -159,7 +158,6 @@ Rate limit: 30 requests per second per source IP, 429 above that.
 | Data frames | `pandas`, `pyarrow` | |
 | Forecasting | `lightgbm` | Three models for p10/p50/p90, `objective="quantile"` |
 | Optimiser | `cvxpy` + default solver (`CLARABEL` ships with it; `ECOS`/`SCS` also fine) | 48×3 variables, instant |
-| Neural net (optional) | `torch` | Only if Vultr GPU is available |
 | Backtest / metrics | `numpy`, `scikit-learn` (for calibration curves) | |
 | Dashboard | Any: `streamlit` is fastest; FastAPI + a small frontend if you want click-to-fork wired cleanly | |
 | Scheduling | `apscheduler` or a `while True: sleep(60)` poller | Poll `datasets/metadata/latest`, fetch only when `lastUpdated` moves |

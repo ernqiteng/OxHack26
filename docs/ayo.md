@@ -122,7 +122,6 @@ Full demo path rehearsed twice from `demo_reset.py` to the closing line. Backup 
 
 ## Phase 4: Stretch (only if everything above is green)
 
-- Vultr GPU instance for Ernqi's NN training if the plan is available; record CPU vs GPU times for the honesty panel.
 - Parallel walk-forward backtest on the worker pool (`POST /backtest_window`) with a reported speed-up versus serial; test: results identical to the serial run.
 - Battery-size sweep dispatched to the pool, same equivalence test.
 

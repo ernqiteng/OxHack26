@@ -63,7 +63,7 @@ The research brief's version (thousands of scenarios, risk-limited optimiser, ca
 
 | Part | Overcomplicated | Simple (do this first) |
 |---|---|---|
-| Prediction | Neural net giving a full range | **LightGBM** quantile model, plus a small neural net on the GPU to compare |
+| Prediction | A model giving a full range | **LightGBM** quantile model |
 | Decision | Optimiser over thousands of scenarios | **Greedy rule:** charge in the cheapest predicted periods, sell in the most expensive, with a cost gate |
 | Proof | Confidence intervals, calibration plots | **One table:** our money vs "same as yesterday" vs perfect knowledge |
 | Dashboard | React app | **Streamlit** |
@@ -211,7 +211,7 @@ Pick exact Elexon endpoint paths from the Swagger spec. Details and quirks for o
 
 **Data and model (defensible choices).**
 - Data: Elexon prices, generation mix, demand, wind forecasts; NESO carbon intensity as an optional exogenous feature.
-- Models: (a) persistence baseline; (b) **LightGBM quantile regression**, fast, strong on tabular data, and HRT's "simplest model that works"; (c) stretch: small temporal neural net with pinball-loss quantile heads on GPU, plus a Gaussian-copula scenario generator (conditional diffusion as a further stretch, echoing HAIL). Keep the neural net only if it beats LightGBM on real weeks.
+- Models: (a) persistence baseline; (b) **LightGBM quantile regression**, fast, strong on tabular data, and HRT's "simplest model that works"; (c) stretch: a Gaussian-copula scenario generator.
 - Decision: greedy with cost gate first; LP (cvxpy/HiGHS) maximising mean scenario P&L, optionally with a CVaR penalty, subject to SoC, power and ~90% round-trip efficiency.
 
 **Architecture.** Elexon REST/IRIS poller → Tiger hypertables → caggs → point-in-time feature view → model (train on GPU, infer per period) → optimiser → `decisions` hypertable → Streamlit dashboard reading caggs and decisions.
@@ -222,14 +222,14 @@ Pick exact Elexon endpoint paths from the Swagger spec. Details and quirks for o
 |---|---|---|---|
 | H0-1 | Tiger signup, schema, hypertables | Vultr credit claim, GPU instance, CUDA check | Repo, skeleton, battery spec |
 | H1-4 | Elexon backfill + live poller | Persistence + LightGBM baselines | Perfect-foresight ceiling |
-| H4-8 | Caggs, columnstore policy, stats query | Neural quantile model on GPU; walk-forward harness | Dashboard: live price, cagg charts, compression panel |
+| H4-8 | Caggs, columnstore policy, stats query | LightGBM quantile model; walk-forward harness | Dashboard: live price, cagg charts, compression panel |
 | H8-12 | Feature view, leakage audit | Scenario generator; seed sweep | Stochastic LP; backtest loop |
 | H12-16 | Sleep shifts | Full walk-forward run | P&L curve, calibration plot |
 | H16-20 | Live poll hardening | Inference endpoint, latency numbers | Live "next decision" panel |
 | H20-22 | Freeze; record backup demo | Freeze model | Write-up, slides |
 | H22-24 | Rehearse x3 | Rehearse | Submit |
 
-**Fallbacks.** If Vultr GPU stock or credits fail, train on CPU and say so. If IRIS is flaky, poll REST. If the neural model loses, present LightGBM as the winner (still an HRT-friendly story).
+**Fallbacks.** If Vultr GPU stock or credits fail, train on CPU and say so. If IRIS is flaky, poll REST.
 
 **Risks and cut order.** Imbalance and market prices are spiky, so P&L can look bad; mitigate by reporting % of ceiling. Cut first: diffusion generator → CVaR → live IRIS (use polling) → React (use Streamlit).
 
@@ -238,7 +238,7 @@ Pick exact Elexon endpoint paths from the Swagger spec. Details and quirks for o
 - 0:30 Tiger panel: N million rows, compression ratio, full-history query time.
 - 1:00 Forecast fan chart for the next periods (GPU scenarios overlaid if built).
 - 1:30 Battery decision for the next period with its reason.
-- 2:00 Walk-forward table: persistence vs LightGBM vs neural; P&L, % of ceiling, calibration.
+- 2:00 Walk-forward table: persistence vs LightGBM; P&L, % of ceiling, calibration.
 - 2:40 "What we'd do with HRT's compute" close. (The repo's demo script adds the timing-audit fork demo; follow `docs/description.md` section 6.)
 
 **Scores (research brief):** HRT 9, Tiger 9, Vultr 8, Novelty 8, Feasibility 8, Wow 8 = 50/60 (52 if the diffusion stretch ships).
@@ -258,7 +258,7 @@ Forecasts per-page Wikipedia edit/revert bursts from the live recent-changes str
 **First steps (also covered in `docs/`):**
 1. **Accounts (one person, 15 min):** Tiger via mlh.link/tigerdata-quickstart ($1,000 credits for 30 days). Vultr via mlh.link/vultr-discover then mlh.link/vultr-signup then Billing → Gift Code ($100). Launch the cheapest GPU plan and run `nvidia-smi`.
 2. **Schema:** hypertable for prices, a half-hour cagg, columnstore enabled with a policy (already drafted in `tempo/db/schema.sql`).
-3. **Data:** pull one day from the Elexon price endpoint (no key), then write the backfill loop within rate limits, and fit persistence + LightGBM baselines before anyone touches a neural net.
+3. **Data:** pull one day from the Elexon price endpoint (no key), then write the backfill loop within rate limits, and fit persistence + LightGBM baselines before anything else.
 
 ---
 

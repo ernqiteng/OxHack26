@@ -87,8 +87,7 @@ The forecaster predicts the price for each of the next 48 settlement periods. It
 We use a model ladder and climb it only as far as the data justifies, simplest first:
 
 1. **Persistence.** "The price at this half-hour will be the same as yesterday." This is the baseline every real model has to beat.
-2. **LightGBM.** Gradient-boosted trees. Strong on tabular data, fast to train, and the model most likely to do the job.
-3. **Small neural net**, trained on Vultr. Kept only if it beats LightGBM on unseen weeks. If it does not, we say so on screen.
+2. **LightGBM.** Gradient-boosted trees. Strong on tabular data, fast to train, and the model that does the job.
 
 #### Decision
 
@@ -141,7 +140,7 @@ The model is trained on a window of history and then tested on the weeks that fo
 |---|---|---|
 | Simple rule ("charge 1am to 5am, sell 5pm to 7pm") | £A | a% |
 | Persistence forecast + same optimiser | £B | b% |
-| **Tempo** (LightGBM/NN forecast + same optimiser) | £C | c% |
+| **Tempo** (LightGBM forecast + same optimiser) | £C | c% |
 | Perfect knowledge of the future | £D | 100% |
 
 The baselines matter. The simple rule tests whether forecasting adds anything over a fixed schedule. The persistence row isolates the value of the model from the value of the optimiser, because both use the same optimiser. Perfect foresight sets the ceiling.
@@ -154,7 +153,7 @@ Raw pounds vary wildly between a calm week and a volatile one. A system can make
 
 - **Calibration.** Does the p10–p90 band actually contain about 90% of real prices? If the band contains 60%, the model is overconfident and the cost gate is being lied to.
 - **Regime breakdown.** Performance split into calm weeks vs windy, volatile weeks. Prediction tends to matter far more in the second.
-- **Where it's weak.** If LightGBM ties the neural net, we show that. If the simple rule nearly matches Tempo in summer, when spreads are small, we show that too. The point of the panel is that a judge can see the limits without having to ask.
+- **Where it's weak.** If the simple rule nearly matches Tempo in summer, when spreads are small, we show that too. The point of the panel is that a judge can see the limits without having to ask.
 
 ---
 
@@ -209,7 +208,7 @@ Take Tiger Data away and both the feature pipeline and the signature mechanic go
 
 - **Parallel replay workers** for the timing audit, provisioned via the Vultr API. Judges watch five workers each pick up a timeline, replay it against the fork and return results live.
 - **Parallel walk-forward backtests**, with a reported speed-up over running them in sequence.
-- **Model training** on CPU workers. GPU plans are not available to this account (every Vultr GPU plan reports no locations, checked via the API), so the neural net, if it earns its place, trains on CPU and we say so.
+- **Model training** on CPU. GPU plans are not available to this account (every Vultr GPU plan reports no locations, checked via the API), and LightGBM on tabular features does not need one.
 - **Battery-size sweep** (stretch): re-running the backtest across different battery capacities is a naturally parallel workload.
 - **Backend and dashboard hosting**, the least interesting part.
 
@@ -249,9 +248,8 @@ Cut from the bottom if time runs out.
 ### Nice-to-have (cut first)
 
 7. `cvxpy` LP optimiser. Built, tested, and in the backtest as the Tempo LP row (68% vs greedy's 66%). Greedy stays live, see section 3.
-8. Neural net vs LightGBM comparison, trained on a Vultr CPU worker (no GPU on this account).
-9. Battery-size sweep and regime breakdown.
-10. pgvector "similar days" lookup, finding historical days whose shape matches today's forecast.
+8. Battery-size sweep and regime breakdown.
+9. pgvector "similar days" lookup, finding historical days whose shape matches today's forecast.
 
 ---
 
@@ -305,7 +303,7 @@ The track rewards decisions, not just predictions. HRT's own writing on AI in tr
 
 It also follows the research habits HRT writes about publicly:
 
-- **Simple first.** Prefer the simpler model if it's as good (HRT: *ML benchmarks*). The neural net stays only if it beats LightGBM. The greedy optimiser stays live because the LP's two-point gain over 100 weeks did not justify the swap; the LP sits on the honesty table as a row, not in production.
+- **Simple first.** Prefer the simpler model if it's as good (HRT: *ML benchmarks*). LightGBM is the forecaster: on tabular features, gradient-boosted trees are the right tool. The greedy optimiser stays live because the LP's two-point gain over 100 weeks did not justify the swap; the LP sits on the honesty table as a row, not in production.
 - **Don't fool yourself.** Low signal-to-noise domains make it easy to see edges that aren't there. We test only on unseen weeks against honest baselines.
 - **No lookahead.** Availability-time stamping on every row (HRT: *How HRT Thinks About Data*).
 

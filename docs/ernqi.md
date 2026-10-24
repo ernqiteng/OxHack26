@@ -147,6 +147,5 @@ Self-grade number on the dashboard. Honesty panel populated from real backtest o
 
 ## Phase 4: Stretch (only if everything above is green)
 
-- `tempo/forecast/nn.py`: small MLP in torch on the same features; keep only if its walk-forward % of perfect beats LightGBM on real weeks. Test: trains to lower loss than a constant on synthetic in under 30 s on CPU. Record CPU vs GPU training time if Ayo's Vultr GPU exists.
 - Battery-size sweep: run the backtest for capacity in {1, 2, 4, 8} MWh at 1 MW; emits a table. Test: perfect PnL is non-decreasing in capacity.
 - Conservative LP variant (`p10` sells, `p90` buys) as an extra row.
