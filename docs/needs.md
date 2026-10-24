@@ -223,4 +223,4 @@ MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
    - **Horizons are 48 half-hours from now, not "one settlement day".** A clock-change day has 46 or 50 periods.
    - **`ZoneInfo("Europe/London")` fails on Windows without the `tzdata` package.** Added to `pyproject.toml`.
    - **Say which clock local-time rules use.** `simple_rule` (charge 01:00 to 05:00, discharge 17:00 to 19:00) and features like `hour` / `period_of_day` should use UK local time, or state UTC explicitly.
-6. [ ] Put `.env.example` in the repo with every variable from B6.
+6. [x] Put `.env.example` in the repo with every variable from B6. **Checked 2026-10-24:** all 17 B6 variables present, plus the test DB URL and `TEMPO_LIVE`.
