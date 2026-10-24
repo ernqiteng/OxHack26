@@ -47,3 +47,24 @@ def test_cycle_cost_subtracted():
 def test_resolve_sim_reports_which():
     sim, name = resolve_sim()
     assert callable(sim.simulate) and name
+
+
+def test_refsim_matches_ernqi_fixture_known_answer():
+    """Ernqi's fixture docstring: simple rule over the first 7 days nets £1264.8 (gross £1397.6,
+    6.64 cycles, 15.0 MWh clipped), computed with an independent reference. The stand-in must agree."""
+    import pandas as pd
+
+    from tests.fixtures.synthetic import make_synthetic_market
+
+    df = make_synthetic_market()
+    mid = df[(df.dataset == "MID") & (df.series == "APXMIDP")].sort_values("start_time").iloc[: 7 * 48]
+    local = pd.DatetimeIndex(mid.start_time).tz_convert("Europe/London")
+    hour = local.hour + local.minute / 60
+    mw = np.where((hour >= 1) & (hour < 5), 1.0, np.where((hour >= 17) & (hour < 19), -1.0, 0.0))
+
+    r = simulate(Battery(), mw, mid.value.to_numpy())
+
+    assert round(r.pnl_gbp, 1) == 1264.8
+    assert round(r.gross_pnl_gbp, 1) == 1397.6
+    assert round(r.cycles, 2) == 6.64
+    assert round(r.clipped_mwh, 1) == 15.0
