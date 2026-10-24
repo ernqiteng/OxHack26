@@ -73,13 +73,13 @@ Tested and confirmed: `/datasets/{X}`, `/balancing/pricing/market-index` and `/b
 
 ### B2. Tiger Cloud: decisions and unknowns to resolve at Gate 0
 
-- [ ] Create a **free service** as the primary database (fast forks). Region will be `us-east-1`.
-- [ ] **Unverified:** free-service storage cap and how many free services one project may hold. The docs say a free service goes read-only at its storage limit but do not state the limit. Check in Console. You need headroom for the primary plus **five** forks, and each fork is its own service with its own compute.
-- [ ] Confirm `timescaledb` extension version and that `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)` and hierarchical aggregates work on the free tier (expected yes, **unverified** on free specifically).
-- [ ] Confirm compression / columnstore policies are allowed on the free tier (**unverified**).
-- [ ] Time one fork end to end with `fork_strategy: "NOW"` and one with `"LAST_SNAPSHOT"` and record the numbers. `LAST_SNAPSHOT` is faster but can be up to an hour stale; `NOW` takes a fresh snapshot. For the timing audit `NOW` is what you want.
-- [ ] Note the fork response: it returns `service_id`, `initial_password`, `endpoint.host`, `endpoint.port` and `status`. Poll `GET /projects/{project_id}/services/{service_id}` until `status == "READY"` before connecting.
-- [ ] Delete forks after each audit: `DELETE /projects/{project_id}/services/{service_id}`.
+- [x] Create a **free service** as the primary database (fast forks). Region will be `us-east-1`. **Done 2026-10-24:** `db-40426`, service ID `g7kw81aat8`, project `hpcbhmyhmj`.
+- [x] Free-service storage cap: **750 MiB** (Console pricing panel, shared compute, $0/hr). **Already 339 MB used on an empty database** (API `metrics.storage_mb`), so only ~410 MiB is left for data. Turn on compression from the start, load NDF as latest-forecast-only, and consider skipping FUELINST; otherwise fall back to the A1 split (raw history on a standard service). Still **unverified:** how many free services one project may hold; one fork at a time worked, five at once is untested.
+- [x] Confirm `timescaledb` extension version and that `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)` and hierarchical aggregates work on the free tier. **Verified 2026-10-24:** PostgreSQL 18.6, TimescaleDB 2.31.0; a 1h cagg and a 1d cagg built on top of it both work. Drop hierarchical caggs top-down (1d before 1h), `DROP TABLE ... CASCADE` won't do it.
+- [x] Confirm compression / columnstore policies are allowed on the free tier. **Verified:** `ALTER TABLE ... SET (timescaledb.enable_columnstore = true)`, `compress_chunk()`, and `CALL add_columnstore_policy(...)` all work. Note `add_columnstore_policy` is a procedure in 2.31: use `CALL`, not `SELECT`.
+- [x] Time one fork end to end with `fork_strategy: "NOW"` and one with `"LAST_SNAPSHOT"` and record the numbers. `LAST_SNAPSHOT` is faster but can be up to an hour stale; `NOW` takes a fresh snapshot. For the timing audit `NOW` is what you want. **Measured 2026-10-24 with `scripts/time_fork.py` on an empty database:** `NOW` 34.8s to READY, `LAST_SNAPSHOT` 25.9s (API accepts the request in ~1s, fork starts `QUEUED`). Re-run after the backfill to confirm it holds with real data.
+- [x] Note the fork response: it returns `service_id`, `initial_password`, `endpoint.host`, `endpoint.port` and `status`. Poll `GET /projects/{project_id}/services/{service_id}` until `status == "READY"` before connecting. **Verified:** status goes `QUEUED` → `READY`.
+- [x] Delete forks after each audit: `DELETE /projects/{project_id}/services/{service_id}`. **Verified:** works, `scripts/time_fork.py` deletes its fork by default.
 
 Fork request body (verified from the REST reference):
 
@@ -208,7 +208,7 @@ MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
 
 ### B8. Gate 0 checklist (do these in the first hour)
 
-1. [ ] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it.
+1. [x] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it. Cap 750 MiB (339 MB used empty, see B2). Forks: 34.8s `NOW`, 25.9s `LAST_SNAPSHOT`.
 2. [ ] Vultr: create API key, check account instance limit, list GPU plans, deploy one tiny instance and time boot-to-ready.
 3. [ ] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3.
 4. [ ] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region.
