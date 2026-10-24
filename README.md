@@ -14,6 +14,7 @@ OxHack 2026. Theme: TIME. Track: HRT, Best Use of Data for Predictions and Decis
 | [docs/girik.md](docs/girik.md) | Part A: Data (Elexon → Tiger Data → features) |
 | [docs/ernqi.md](docs/ernqi.md) | Part B: Brain (battery, optimiser, forecaster, backtest) |
 | [docs/ayo.md](docs/ayo.md) | Part C: Stage (forks, workers, timing audit, dashboard, demo) |
+| [docs/ui.md](docs/ui.md) | Dashboard design spec: YC inspiration, theme tokens, screen wireframes, build order |
 
 ## Quick start
 
@@ -25,6 +26,41 @@ make test             # unit + contract tests
 make test-db          # tests that need the local DB
 make dashboard
 ```
+
+## Before every rehearsal and before going on stage
+
+Run the go/no-go check. It prints one line per check, then `GO` (exit code 0) or `NO-GO` (exit code 1).
+
+```bash
+.venv/bin/python scripts/demo_reset.py              # check, delete stale audit forks, pick a decision to click
+.venv/bin/python scripts/demo_reset.py --dry-run    # check only, delete nothing
+.venv/bin/python scripts/demo_reset.py --decision N # confirm a specific decision is replayable
+.venv/bin/python scripts/demo_reset.py --fork-test  # also take and delete one real Tiger fork and time it (~30-40 s)
+.venv/bin/python scripts/demo_reset.py --no-score   # skip the in-process replays used to rank decisions
+```
+
+What it checks:
+
+| Check | Fails (NO-GO) when | Warns when |
+|---|---|---|
+| Tiger | the primary service is missing or not `READY` | the primary is `PAUSED` |
+| Stale forks | an `audit-*` fork is left over and can't be deleted (or `--dry-run`) | |
+| Service slots | no free slot for the audit's fork (the free tier holds 2 services: the primary plus one fork) | |
+| Database | `TEMPO_DATABASE_URL` is unreachable | |
+| Prices | `prices_hh` is empty | the newest price is over 3 hours old (poller down?) |
+| Decision | no live decision has all 48 periods priced | a shifted timeline beats "as decided" (say so on stage) |
+| Workers | any worker fails `/health`, or there is no pool | only local workers (Vultr not configured: don't say "Vultr"), or fewer than 5 |
+| Simulator | | workers run a different simulator from this machine (rebuild the worker image) |
+
+It picks the decision to click by replaying recent live decisions in-process. It prefers one where "as decided" beats every shift and a hold sits nearby, and prints the line to say, for example "Charging one period later would have cost £14.30". Those replays write `battery_state` rows under `audit-*` run ids, never under `live`.
+
+Demo-day rules that follow from the Tiger free tier's two-service limit (see [docs/description.md](docs/description.md) section 11):
+
+- Nobody creates Tiger forks or services on demo day. Any extra service takes the audit's slot.
+- Click the timing audit once and wait for it to finish. A second click while the fork exists fails.
+- If the fork audit fails on stage, switch the toggle to in-process and say "same replay, run locally".
+
+The audit's fork layout is set in `.env`: `TEMPO_AUDIT_FORKS=shared` (one fork per click, the default) or `per_shift` (five forks, only with a raised service limit).
 
 ## Layout
 

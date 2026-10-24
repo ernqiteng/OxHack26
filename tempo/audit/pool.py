@@ -58,8 +58,10 @@ class HttpWorkerPool:
         client: httpx.AsyncClient | None = None,
         request_timeout: float = 150.0,
         acquire_timeout: float = 120.0,
+        token: str | None = None,
     ) -> None:
         self.workers = list(workers)
+        self.headers = {"Authorization": f"Bearer {token}"} if token else {}
         self._client = client
         self.request_timeout = request_timeout
         self.acquire_timeout = acquire_timeout
@@ -118,7 +120,9 @@ class HttpWorkerPool:
             }
             client = self._http()
             try:
-                resp = await client.post(f"{slot.base_url}/replay", json=body, timeout=self.request_timeout)
+                resp = await client.post(
+                    f"{slot.base_url}/replay", json=body, headers=self.headers, timeout=self.request_timeout
+                )
             except httpx.HTTPError as exc:
                 raise WorkerError(f"{slot.worker_id}: {type(exc).__name__}: {exc}") from exc
             finally:
@@ -181,9 +185,10 @@ def default_pool():
     from tempo.config import settings
 
     if settings().vultr.configured:
+        from tempo.config import env
         from tempo.infra.vultr import VultrClient
 
         with VultrClient.from_env() as vultr:
-            pool = HttpWorkerPool.from_vultr(vultr)
+            pool = HttpWorkerPool.from_vultr(vultr, token=env("TEMPO_WORKER_TOKEN"))
         return pool, f"Vultr pool: {', '.join(w.worker_id for w in pool.workers)}"
     return LocalWorkerPool(5), "VULTR_API_KEY not set: replaying on 5 local workers (same worker code)"

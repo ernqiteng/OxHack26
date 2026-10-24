@@ -111,3 +111,24 @@ def test_from_vultr_with_no_workers_raises():
         assert "tempo-worker" in str(exc)
     else:
         raise AssertionError("expected NoWorkers")
+
+
+def test_pool_sends_the_worker_token():
+    from fastapi import Header
+
+    app = FastAPI()
+    seen = []
+
+    @app.post("/replay")
+    def replay(body: dict, authorization: str | None = Header(default=None)):
+        seen.append(authorization)
+        return {
+            "pnl_gbp": 1.0,
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "finished_at": "2026-01-01T00:00:01+00:00",
+            "worker_id": "w",
+        }
+
+    pool = LocalWorkerPool(1, app=app, token="t0k")
+    run_all(pool, [0])
+    assert seen == ["Bearer t0k"]
