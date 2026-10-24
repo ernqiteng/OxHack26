@@ -29,4 +29,9 @@ def test_windows_tile_without_overlap(days, train_days, test_days):
 
 def test_sixty_synthetic_days_give_four_test_weeks():
     windows = list(make_windows(START, START + pd.Timedelta(days=60)))
-    assert [w.test_start.date().isoformat() for w in windows] == ["2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23"]
+    assert [w.test_start.date().isoformat() for w in windows] == [
+        "2026-02-02",
+        "2026-02-09",
+        "2026-02-16",
+        "2026-02-23",
+    ]

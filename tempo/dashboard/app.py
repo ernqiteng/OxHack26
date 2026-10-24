@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from tempo.config import settings
+from tempo.dashboard import jobs
 from tempo.dashboard.data import (
     SHIFTS,
     current_settlement_period,
@@ -126,42 +127,52 @@ def tab_replay(src) -> None:
     show_notes(src, "replay_week")
 
 
-def tab_audit(src) -> None:
-    decisions = src.recent_decisions()
-    labels = {
-        int(r.decision_id): f"#{r.decision_id}  {r.decided_at:%d %b %H:%M}  {r.action}"
-        + (f"  ({r.reason})" if r.reason else "")
-        for r in decisions.itertuples()
-    }
-    chosen = st.selectbox("Decision", options=list(labels), format_func=labels.get, key="audit_decision")
-    mode = st.radio(
-        "Mode", ["in-process", "forks"], horizontal=True, key="audit_mode", help="Forks arrive in Phase 2"
-    )
-    run = st.button("Run timing audit", type="primary", key="audit_run")
+SHIFT_LABELS = {-2: "1 h earlier", -1: "30 min earlier", 0: "as decided", 1: "30 min later", 2: "1 h later"}
+STATE_ICON = {"queued": "○", "forking": "◌", "ready": "◍", "replaying": "◉", "done": "✓", "failed": "✗"}
+MODE_INPROCESS, MODE_FORK = "in-process", "Tiger fork + Vultr workers"
 
-    show_notes(src, "recent_decisions")
-    if run:
-        if mode == "forks":
-            st.warning("Fork mode lands in Phase 2; running the same replay in-process.")
-        with st.spinner("Replaying five timelines…"):
-            st.session_state["audit_result"] = src.run_audit(chosen)
-        st.session_state["audit_mode_used"] = "in-process"
-        st.session_state["audit_action"] = decisions.set_index("decision_id").action.get(chosen, "hold")
-    rows = st.session_state.get("audit_result")
-    if rows is None:
-        st.info(
-            "Pick a decision and press Run. Five timelines, shifts −2..+2, the real decision in the middle."
-        )
+
+def _store_result(job, src) -> None:
+    """Move a finished job's rows into session_state so the result view renders without the job."""
+    st.session_state["audit_result"] = job.rows
+    st.session_state["audit_mode_used"] = "fork" if job.error is None else "fork (crashed)"
+    st.session_state["audit_log"] = job.progress.log_lines()
+    st.session_state["audit_error"] = job.error
+    st.session_state["audit_elapsed"] = job.running_s
+    if getattr(job, "note", None):
+        src.notes["fork_audit"] = job.note
+    st.session_state.pop("audit_job", None)
+
+
+@st.fragment(run_every=0.5)
+def audit_progress_view() -> None:
+    """Re-renders every half second while a fork audit runs in the background."""
+    job = st.session_state.get("audit_job")
+    if job is None:
         return
+    if job.done:
+        _store_result(job, get_source()[0])
+        st.rerun(scope="app")
+        return
+    states = job.states()
+    cols = st.columns(len(SHIFTS))
+    for col, shift in zip(cols, SHIFTS, strict=True):
+        state = states.get(shift, "queued")
+        with col:
+            st.markdown(f"**{SHIFT_LABELS[shift]}**" if shift else f"**:blue[{SHIFT_LABELS[shift]}]**")
+            st.markdown(f"{STATE_ICON.get(state, '○')} {jobs.STATE_LABEL.get(state, state)}")
+            worker = job.progress.workers.get(shift)
+            st.caption(worker or "")
+    st.caption(f"elapsed {job.running_s:04.1f} s")
+    st.code("\n".join(job.log_lines()) or "starting…", language="text")
 
+
+def render_audit_result(src, rows: pd.DataFrame) -> None:
     cols = st.columns(len(SHIFTS))
     for col, shift in zip(cols, SHIFTS, strict=True):
         r = rows[rows["shift"] == shift].iloc[0]
-        label = {-2: "1 h earlier", -1: "30 min earlier", 0: "as decided", 1: "30 min later", 2: "1 h later"}[
-            shift
-        ]
         with col:
-            st.markdown(f"**{label}**" if shift else f"**:blue[{label}]**")
+            st.markdown(f"**{SHIFT_LABELS[shift]}**" if shift else f"**:blue[{SHIFT_LABELS[shift]}]**")
             st.metric(
                 "PnL",
                 gbp(r.pnl_gbp),
@@ -172,6 +183,8 @@ def tab_audit(src) -> None:
     errors = [(r.shift, r.error) for r in rows.itertuples() if isinstance(getattr(r, "error", None), str)]
     for shift, err in errors:
         st.error(f"shift {shift:+d} failed: {err}")
+    if st.session_state.get("audit_error"):
+        st.error(f"audit crashed: {st.session_state['audit_error']}")
     later = rows[rows["shift"] == 1].iloc[0]
     if not pd.isna(later.pnl_delta_gbp):
         verb = "cost" if later.pnl_delta_gbp < 0 else "earned"
@@ -179,16 +192,77 @@ def tab_audit(src) -> None:
             st.session_state.get("audit_action"), "Acting"
         )
         st.success(f"{doing} one period later would have {verb} £{abs(later.pnl_delta_gbp):,.2f}.")
-    elapsed = (rows.finished_at.max() - rows.started_at.min()).total_seconds()
+    elapsed = st.session_state.get("audit_elapsed")
+    if elapsed is None:
+        elapsed = (rows.finished_at.max() - rows.started_at.min()).total_seconds()
+    fork_ids = sorted({f for f in rows.get("fork_service_id", pd.Series(dtype=object)).dropna() if f})
     st.caption(
         f"mode: {st.session_state.get('audit_mode_used')}, total elapsed {elapsed:.1f} s, "
-        f"simulator: {src.sim_name}"
+        f"simulator: {src.sim_name}" + (f", fork {', '.join(map(str, fork_ids))}" if fork_ids else "")
     )
+    log = st.session_state.get("audit_log")
+    if log:
+        with st.expander("Audit log", expanded=False):
+            st.code("\n".join(log), language="text")
     st.dataframe(
         rows[["shift", "pnl_gbp", "pnl_delta_gbp", "mode", "worker_id", "fork_service_id"]],
         hide_index=True,
         width="stretch",
     )
+
+
+def tab_audit(src) -> None:
+    decisions = src.recent_decisions()
+    labels = {
+        int(r.decision_id): f"#{r.decision_id}  {r.decided_at:%d %b %H:%M}  {r.action}"
+        + (f"  ({r.reason})" if r.reason else "")
+        + ("  [rehearsal]" if getattr(r, "run_id", "live") == "selftest" else "")
+        for r in decisions.itertuples()
+    }
+    job = st.session_state.get("audit_job")
+    running = job is not None and not job.done
+    chosen = st.selectbox("Decision", options=list(labels), format_func=labels.get, key="audit_decision")
+    mode = st.radio(
+        "Mode",
+        [MODE_FORK, MODE_INPROCESS],
+        horizontal=True,
+        key="audit_mode",
+        help="Fork mode takes a Tiger zero-copy fork of live data and replays on the Vultr pool. "
+        "In-process is the on-stage fallback: same replay, run locally.",
+    )
+    run = st.button("Run timing audit", type="primary", key="audit_run", disabled=running)
+
+    if run and not running:
+        st.session_state["audit_action"] = decisions.set_index("decision_id").action.get(chosen, "hold")
+        for key in ("audit_result", "audit_log", "audit_error", "audit_elapsed"):
+            st.session_state.pop(key, None)
+        if mode == MODE_FORK:
+            job = src.start_fork_audit(chosen)
+            if job.done:
+                _store_result(job, src)
+            else:
+                st.session_state["audit_job"] = job
+                running = True
+        else:
+            with st.spinner("Replaying five timelines…"):
+                st.session_state["audit_result"] = src.run_audit(chosen)
+            st.session_state["audit_mode_used"] = "in-process"
+
+    show_notes(src, "recent_decisions", "fork_audit")
+    if running:
+        st.info(
+            "Audit running: one Tiger fork of live data, five Vultr workers. The button unlocks when done."
+        )
+        audit_progress_view()
+        return
+
+    rows = st.session_state.get("audit_result")
+    if rows is None:
+        st.info(
+            "Pick a decision and press Run. Five timelines, shifts −2..+2, the real decision in the middle."
+        )
+        return
+    render_audit_result(src, rows)
 
     sg = src.self_grade()
     st.markdown(

@@ -10,8 +10,15 @@ from tempo.backtest.metrics import summary
 
 def rows(strategy, pnls, perfects):
     return [
-        {"run_id": "t", "week_start": date(2026, 2, 2 + 7 * i), "strategy": strategy, "pnl_gbp": p,
-         "perfect_pnl_gbp": q, "pct_of_perfect": 100 * p / q, "regime": "calm"}
+        {
+            "run_id": "t",
+            "week_start": date(2026, 2, 2 + 7 * i),
+            "strategy": strategy,
+            "pnl_gbp": p,
+            "perfect_pnl_gbp": q,
+            "pct_of_perfect": 100 * p / q,
+            "regime": "calm",
+        }
         for i, (p, q) in enumerate(zip(pnls, perfects))
     ]
 
@@ -20,7 +27,9 @@ def rows(strategy, pnls, perfects):
 def results():
     perfect = [500.0, 40.0]
     return pd.DataFrame(
-        rows("perfect", perfect, perfect) + rows("simple_rule", [400.0, 40.0], perfect) + rows("persistence_greedy", [450.0, 0.0], perfect)
+        rows("perfect", perfect, perfect)
+        + rows("simple_rule", [400.0, 40.0], perfect)
+        + rows("persistence_greedy", [450.0, 0.0], perfect)
     )
 
 

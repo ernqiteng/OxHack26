@@ -34,12 +34,19 @@ def perfect_foresight(prices, battery: Battery) -> pd.DataFrame:
     mw[np.abs(mw) < EPS] = 0.0
     action = np.where(mw > 0, "charge", np.where(mw < 0, "discharge", "hold"))
     return pd.DataFrame(
-        {"action": action, "mw": mw, "expected_spread": np.nan, "reason": "perfect foresight (actual prices)"},
+        {
+            "action": action,
+            "mw": mw,
+            "expected_spread": np.nan,
+            "reason": "perfect foresight (actual prices)",
+        },
         index=index,
     )
 
 
-def _solve(p: np.ndarray, battery: Battery, exclusive: bool, sell: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+def _solve(
+    p: np.ndarray, battery: Battery, exclusive: bool, sell: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     """Charge c and discharge d in MW. Buys are priced at p, sells at `sell` (default p); LPOptimiser's
     conservative variant passes p90 as p and p10 as sell."""
     sell = p if sell is None else sell

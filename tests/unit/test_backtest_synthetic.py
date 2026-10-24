@@ -41,7 +41,13 @@ def test_one_row_per_week_and_strategy(results):
     assert len(results) == 4 * len(STRATEGIES)
     assert not results.duplicated(["run_id", "week_start", "strategy"]).any()  # backtest_results primary key
     assert list(results.columns) == [
-        "run_id", "week_start", "strategy", "pnl_gbp", "perfect_pnl_gbp", "pct_of_perfect", "regime",
+        "run_id",
+        "week_start",
+        "strategy",
+        "pnl_gbp",
+        "perfect_pnl_gbp",
+        "pct_of_perfect",
+        "regime",
     ]
 
 
@@ -75,9 +81,15 @@ def test_known_answers_from_fixture_docstring(prices_hh):
 def test_persistence_greedy_uses_only_published_prices(prices_hh):
     """Change prices after each day's decision time: the plan for that day must not move.
     Day d is planned at local midnight, so it may only depend on prices published by then."""
-    window = Window(START, START + pd.Timedelta(days=28), START + pd.Timedelta(days=28), START + pd.Timedelta(days=35))
-    train = prices_hh[(prices_hh.bucket >= window.train_start) & (prices_hh.bucket < window.train_end)].reset_index(drop=True)
-    test = prices_hh[(prices_hh.bucket >= window.test_start) & (prices_hh.bucket < window.test_end)].reset_index(drop=True)
+    window = Window(
+        START, START + pd.Timedelta(days=28), START + pd.Timedelta(days=28), START + pd.Timedelta(days=35)
+    )
+    train = prices_hh[
+        (prices_hh.bucket >= window.train_start) & (prices_hh.bucket < window.train_end)
+    ].reset_index(drop=True)
+    test = prices_hh[
+        (prices_hh.bucket >= window.test_start) & (prices_hh.bucket < window.test_end)
+    ].reset_index(drop=True)
     base = persistence_greedy(train, test, Battery(soc_mwh=0.0))
 
     # Scramble everything from 23:30 on the last training day onwards (published 00:40, after the first decision).

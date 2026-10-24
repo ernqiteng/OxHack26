@@ -185,15 +185,37 @@ class LocalWorkerPool(HttpWorkerPool):
         return httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), timeout=self.request_timeout)
 
 
+def pool_from_urls(spec: str, token: str | None) -> HttpWorkerPool:
+    """TEMPO_WORKER_URLS = 'tempo-worker-1=http://1.2.3.4:8000,tempo-worker-2=http://...' (or bare URLs)."""
+    slots = []
+    for k, item in enumerate(s.strip() for s in spec.split(",") if s.strip()):
+        name, _, url = item.rpartition("=") if "=" in item else ("", "", item)
+        slots.append(WorkerSlot(name or f"worker-{k + 1}", url.rstrip("/"), "ewr"))
+    if not slots:
+        raise NoWorkers("TEMPO_WORKER_URLS is set but empty")
+    return HttpWorkerPool(slots, token=token)
+
+
 def default_pool():
-    """The Vultr pool when VULTR_API_KEY is set, else 5 local workers. Returns (pool, note)."""
-    from tempo.config import settings
+    """Pick the worker pool: Vultr's tagged instances when the API is reachable, else the static list in
+    TEMPO_WORKER_URLS (written by scripts/create_workers.py; the backend box's IP is not in Vultr's API
+    allow-list), else 5 local workers. Returns (pool, note)."""
+    from tempo.config import env, settings
 
+    token = env("TEMPO_WORKER_TOKEN")
+    urls = env("TEMPO_WORKER_URLS")
     if settings().vultr.configured:
-        from tempo.config import env
-        from tempo.infra.vultr import VultrClient
+        from tempo.infra.vultr import VultrClient, VultrError
 
-        with VultrClient.from_env() as vultr:
-            pool = HttpWorkerPool.from_vultr(vultr, token=env("TEMPO_WORKER_TOKEN"))
-        return pool, f"Vultr pool: {', '.join(w.worker_id for w in pool.workers)}"
+        try:
+            with VultrClient.from_env() as vultr:
+                pool = HttpWorkerPool.from_vultr(vultr, token=token)
+            return pool, f"Vultr pool via API: {', '.join(w.worker_id for w in pool.workers)}"
+        except (VultrError, NoWorkers) as exc:
+            if not urls:
+                raise
+            note = f"Vultr API unavailable from here ({str(exc)[:80]}); using TEMPO_WORKER_URLS"
+            return pool_from_urls(urls, token), note
+    if urls:
+        return pool_from_urls(urls, token), "VULTR_API_KEY not set; using TEMPO_WORKER_URLS"
     return LocalWorkerPool(5), "VULTR_API_KEY not set: replaying on 5 local workers (same worker code)"

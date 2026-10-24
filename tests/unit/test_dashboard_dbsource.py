@@ -61,6 +61,7 @@ def test_failed_shift_renders_as_failed(monkeypatch):
         str(Path(__file__).resolve().parents[2] / "tempo/dashboard/app.py"), default_timeout=60
     )
     at.run()
+    at.radio(key="audit_mode").set_value("in-process").run()
     at.button(key="audit_run").click().run()
     assert not at.exception, [e.value for e in at.exception]
     audit = at.tabs[2]

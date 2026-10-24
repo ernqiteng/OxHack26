@@ -190,6 +190,17 @@ def check_database(report: Report, conn, now: datetime) -> bool:
         return False
     report.add(OK, "database", "reachable")
     try:
+        n_selftest = conn.execute("SELECT count(*) FROM decisions WHERE run_id = 'selftest'").fetchone()[0]
+    except Exception:  # noqa: BLE001
+        n_selftest = 0
+    if n_selftest:
+        report.add(
+            WARN,
+            "rehearsal",
+            f"{n_selftest} rehearsal decision rows (run_id selftest) still present; "
+            "remove before the demo: scripts/seed_selftest.py --remove",
+        )
+    try:
         n, latest = conn.execute("SELECT count(*), max(bucket) FROM prices_hh").fetchone()
     except Exception as exc:  # noqa: BLE001
         report.add(FAIL, "prices", f"prices_hh unreadable: {exc}")

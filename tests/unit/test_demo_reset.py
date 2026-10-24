@@ -48,14 +48,19 @@ def healthy(n=5, sim=LOCAL_SIM, prefix="tempo-worker"):
 class StubConn:
     """Answers the handful of queries preflight makes."""
 
-    def __init__(self, prices=(17_000, NOW - timedelta(minutes=40)), decisions=True, broken=False):
+    def __init__(
+        self, prices=(17_000, NOW - timedelta(minutes=40)), decisions=True, broken=False, selftest_rows=0
+    ):
         self.prices, self.decisions, self.broken = prices, decisions, broken
+        self.selftest_rows = selftest_rows
 
     def execute(self, sql, params=()):
         if self.broken:
             raise RuntimeError("connection refused")
         rows = [(1,)]
-        if "FROM prices_hh" in sql and "count(*), max(bucket)" in sql:
+        if "run_id = 'selftest'" in sql:
+            rows = [(self.selftest_rows,)]
+        elif "FROM prices_hh" in sql and "count(*), max(bucket)" in sql:
             rows = [self.prices]
         elif "GROUP BY decided_at" in sql:
             t = NOW - timedelta(days=1)
@@ -211,3 +216,9 @@ def test_no_pool_is_no_go():
 @pytest.mark.parametrize("forks", ["many", ""])
 def test_bad_layout_is_no_go(forks):
     assert not run(forks=forks).go
+
+
+def test_rehearsal_rows_warn_but_go():
+    r = run(conn=StubConn(selftest_rows=48))
+    assert r.go and levels(r)["rehearsal"] == WARN
+    assert "seed_selftest.py --remove" in next(c.message for c in r.checks if c.name == "rehearsal")

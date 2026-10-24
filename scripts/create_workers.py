@@ -116,6 +116,14 @@ def main() -> int:
         time.sleep(10)
         print("...retrying health")
     print(f"pool {'ready' if ok else 'NOT fully healthy'} after {time.monotonic() - t0:.0f}s")
+    if ok:
+        from tempo.infra.deploy import set_env_var
+
+        spec = ",".join(f"{w.label}=http://{w.main_ip}:8000" for w in vultr.list_workers() if w.is_active)
+        set_env_var("TEMPO_WORKER_URLS", spec)
+        print(
+            "TEMPO_WORKER_URLS written to .env (the backend box uses it; its IP is not in Vultr's allow-list)"
+        )
     return 0 if ok else 1
 
 

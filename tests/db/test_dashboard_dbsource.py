@@ -22,7 +22,10 @@ def test_dbsource_reads_live_rows_and_audits(market):
     assert len(sched) == 48 and set(sched.action) == {"charge", "discharge", "hold"}
     assert src.latest_hold() is not None
     decisions = src.recent_decisions(50)
-    assert "recent_decisions" not in src.notes and did in set(decisions.decision_id)
+    assert "recent_decisions" not in src.notes
+    listed = set(decisions.decision_id)
+    assert {did + k for k in range(2, 6)} <= listed  # the charges are offered to click
+    assert did not in listed  # holds are not: "one period later" needs an action to move
 
     rows = src.run_audit(did)
     assert sorted(rows["shift"]) == [-2, -1, 0, 1, 2]
