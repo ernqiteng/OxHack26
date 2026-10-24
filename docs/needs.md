@@ -110,7 +110,8 @@ All under `https://data.elexon.co.uk/bmrs/api/v1`. All return JSON. Use `/stream
 Quirks to code around:
 
 - **7-day cap** on every non-stream endpoint. Stream endpoints returned 60 days and 1 year without complaint, but keep bulk calls to ~30 to 90 days each so a single failure is cheap to retry.
-- **N2EX MID rows with zero price/volume.** Filter to `APXMIDP`, or drop rows with `volume == 0`.
+- **N2EX MID rows with zero price/volume.** Filter to `APXMIDP`, or drop rows with `volume == 0`. Do both: APX alone still had 12 zero-volume rows in the year to 2026-10-24.
+- **`settlementPeriod` is UK local time.** In BST, `startTime 00:00Z` is SP 3 (SP 1 is 23:00Z the previous day). The year of MID contained one SP 49 and one SP 50 (26 Oct 2025 clock change). Another reason to key on `startTime`.
 - **Settlement periods 49 and 50** exist on clock-change days (the API notes this). October 25 2026 is a clock-change day in the UK, which is during OxHack. Key rows on `startTime` (UTC), not `(settlementDate, settlementPeriod)`.
 - **NDF volume.** Two years of NDF is about 30 MB per 60 days ≈ 360 MB JSON. Either load only the latest forecast per `startTime` published before each decision time, or load it all and let compression handle it. It is the dataset that makes the "millions of rows, compressed Y%" line true.
 - **WINDFOR is hourly.** Forward-fill or interpolate to half-hours.
@@ -210,7 +211,7 @@ MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
 
 1. [x] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it. Cap 750 MiB (339 MB used empty, see B2). Forks: 34.8s `NOW`, 25.9s `LAST_SNAPSHOT`.
 2. [ ] Vultr: create API key, check account instance limit, list GPU plans, deploy one tiny instance and time boot-to-ready.
-3. [ ] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3.
+3. [x] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3. **Done 2026-10-24, shapes match.** Both return a bare JSON list (no `data` wrapper), newest first. MID 1 year APX: 17,521 rows, 2.8 MB, 6.9s. NDF 1 week: 19,768 rows, 3.4 MB, 8.7s, 334 publishes (every ~30 min), all `boundary: "N"`. Extrapolates to ~2.1M rows / ~350 MB JSON for 2 years, matching B3.
 4. [ ] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region.
 5. [ ] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date).
 6. [ ] Put `.env.example` in the repo with every variable from B6.
