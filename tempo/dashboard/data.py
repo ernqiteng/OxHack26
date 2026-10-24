@@ -246,7 +246,13 @@ class SyntheticSource:
     # Honesty tab ------------------------------------------------------------------------------
     def backtest_summary(self) -> pd.DataFrame:
         perfect = 4120.0
-        totals = {"simple_rule": 1980.0, "persistence_greedy": 2410.0, "tempo": 2890.0, "perfect": perfect}
+        totals = {
+            "simple_rule": 1980.0,
+            "persistence_greedy": 2410.0,
+            "tempo": 2890.0,
+            "tempo_lp": 2960.0,
+            "perfect": perfect,
+        }
         return pd.DataFrame(
             {
                 "strategy": [STRATEGY_LABELS[s] for s in STRATEGIES],
@@ -261,7 +267,7 @@ class SyntheticSource:
     def backtest_by_regime(self) -> pd.DataFrame:
         rows = []
         for regime, scale in (("calm", 0.6), ("windy", 1.4)):
-            for s, pct in zip(STRATEGIES, (48, 58, 70, 100), strict=True):
+            for s, pct in zip(STRATEGIES, (48, 58, 70, 72, 100), strict=True):
                 rows.append(
                     {
                         "regime": regime,
