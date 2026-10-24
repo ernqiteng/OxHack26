@@ -7,7 +7,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
-models/*.joblib
+models/**/*.joblib
 models/*.pt
 *.log
 .DS_Store
