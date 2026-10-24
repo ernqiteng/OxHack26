@@ -64,7 +64,9 @@ This is the pipeline from raw market data to a committed battery action.
 - **Cadence:** 48 settlement periods a day, so new data arrives during the demo and the live view genuinely updates.
 - **History:** a bulk load of around two years of history for training and backtesting.
 
-Everything lands in **Tiger Data hypertables**. Every row is stamped with the time the data was *published*, not just the settlement period it *describes*. This matters more than anything else in the data layer: it guarantees no lookahead. When Tempo makes a decision for 6pm, every feature it uses is built only from data that had actually been published at the moment the decision was made. A wind forecast released at 7pm cannot leak into a 6pm decision.
+Everything lands in **Tiger Data hypertables**. Every row is stamped with the time the data became *available*, not just the settlement period it *describes*. Elexon provides a publish time for the wind forecast, demand forecast, generation mix and system price, and we store it as-is. The Market Index Data price series carries no publish time, so for those rows we store a stated availability delay (period end plus a fixed number of minutes, shown on the honesty panel). This matters more than anything else in the data layer: it guarantees no lookahead. When Tempo makes a decision for 6pm, every feature it uses is built only from data that had actually been available at the moment the decision was made. A wind forecast released at 7pm cannot leak into a 6pm decision.
+
+**Price series.** Tempo uses APX Market Index Data (the within-day exchange index) as its price. System price is published about 24 hours after the period it describes, so it cannot drive live decisions. The N2EX index has frequent zero-price, zero-volume rows. We assume the battery can transact at the APX index price for each period, and that assumption is stated on screen.
 
 #### Features
 
@@ -72,7 +74,7 @@ Features are built from **hierarchical continuous aggregates** at three timescal
 
 | Timescale | Examples |
 |---|---|
-| Half-hourly | Price at the same settlement period yesterday and last week, forecast wind as a share of demand, time-of-day effects |
+| Half-hourly | Price at the same settlement period yesterday and last week, forecast wind as a share of demand (the wind forecast is hourly and is interpolated to settlement periods), time-of-day effects |
 | Daily | Rolling daily price spread (max minus min), daily mean, day-of-week effects |
 | Weekly | Weekly volatility, regime indicators (calm vs windy) |
 
@@ -115,11 +117,11 @@ This is the part that answers the TIME theme directly. A prediction can be right
 Click any decision on the dashboard and Tempo:
 
 1. **Spawns five alternative timelines.** The same action, shifted by −2, −1, 0, +1 and +2 settlement periods. In other words: what if we had done this an hour earlier, half an hour earlier, exactly when we did, half an hour later, or an hour later?
-2. **Runs each timeline in its own Tiger Data zero-copy fork.** Each what-if gets an isolated, writable copy of the database. It writes its own simulated battery state, its own decisions and its own profit-and-loss without touching the live system or the other forks. This is the honest reason forks are load-bearing here: five parallel what-ifs that each need to *write* state, not just read the past.
+2. **Runs each timeline in its own Tiger Data zero-copy fork.** Each what-if gets an isolated, writable copy of the database. It writes its own simulated battery state, its own decisions and its own profit-and-loss without touching the live system or the other forks. This is the honest reason forks are load-bearing here: five parallel what-ifs that each need to *write* state, not just read the past. The live database runs as a Tiger free service, where forks are copy-on-write and complete in 30 to 90 seconds. On a standard service a fork takes 5 to 20 minutes, which would be too slow for a live click.
 3. **Dispatches the replays to a pre-warmed pool of Vultr workers.** Each worker, provisioned via the Vultr API, picks up one fork and replays the battery forward from that point.
 4. **Shows all five side by side** on the dashboard, with the real decision highlighted and a concrete number attached: *"charging one period later would have cost £14."*
 
-The same audit runs automatically on every completed charge-discharge cycle, which gives Tempo a running self-grade:
+The same shift analysis also runs automatically on every completed charge-discharge cycle, as in-process backtest shifts rather than forks, which gives Tempo a running self-grade. Forks are reserved for the on-stage audit:
 
 > "Tempo's timing was within one settlement period of hindsight-optimal on 71% of cycles this month."
 
@@ -157,14 +159,14 @@ Raw pounds vary wildly between a calm week and a volatile one. A system can make
 ## 4. End-to-end data flow
 
 ```
-Elexon BMRS API (prices, wind forecast, demand, generation mix)
+Elexon BMRS API (APX MID prices, wind forecast, demand, generation mix)
         │  every settlement period + 2 years of history
         ▼
-Tiger Data hypertables  (raw data, stamped with publish time)
+Tiger Data hypertables  (raw data, stamped with availability time)
         │
 hierarchical continuous aggregates (half-hourly → daily → weekly)
         │
-feature pipeline (only data published before decision time)
+feature pipeline (only data available before decision time)
         │
 forecaster on Vultr  → 48-period price quantiles (p10 / p50 / p90)
         │
@@ -194,6 +196,7 @@ honesty dashboard             timing audit
 ### Tiger Data
 
 - **Hypertables** for the grid data stream and the decisions log. Time-series storage that is built for exactly this shape of data: a high-frequency append-only stream queried by time range.
+- **Free service as the primary database.** Free services use copy-on-write storage, which is what makes forks zero-copy and fast enough to create on a click.
 - **Hierarchical continuous aggregates** for multi-timescale features and live dashboard charts. The half-hourly, daily and weekly rollups update themselves as new data arrives.
 - **Compression** on two years of history, shown on screen ("X million rows, compressed Y%"), with a two-year query returning instantly.
 - **Zero-copy forks** as the timing-audit engine. Each what-if timeline needs its own writable copy of the database. Nothing in Layer 2 works without them.
@@ -231,7 +234,7 @@ Cut from the bottom if time runs out.
 
 ### Must-have (the whole pitch on its own)
 
-1. Elexon history and live polling into Tiger Data hypertables, with continuous aggregates at two timescales (weekly if time allows).
+1. Elexon history (via the stream endpoints, which are not capped at 7 days) and live polling into Tiger Data hypertables, with continuous aggregates at two timescales (weekly if time allows).
 2. Walk-forward backtest with the greedy rule, the simple-rule baseline and perfect foresight. This alone is a demo.
 3. LightGBM forecast feeding the cost-gated decision, and the backtest table on screen.
 
@@ -256,8 +259,8 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 
 | Gate | Done when | Decisions made here |
 |---|---|---|
-| **Gate 0: Setup** (first hour) | Repo, Tiger Data instance, Vultr account, Elexon pull tested | Market Index Data vs system price: pick one, write down why, don't switch. Vultr GPU available or not. Who owns what. |
-| **Gate 1: Data** | History loaded, live polling running, aggregates building | Confirm publish-time stamping on every row |
+| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU available or not. Vultr instance limit checked. Who owns what. |
+| **Gate 1: Data** | History loaded, live polling running, aggregates building | Confirm availability-time stamping on every row |
 | **Gate 2: Baseline demo** | Backtest table with simple rule, greedy + persistence, perfect foresight | Lookahead sanity check: only perfect foresight should "know" the future |
 | **Gate 3: Tempo decides** | LightGBM forecast feeding the cost gate, Tempo row in the table | |
 | **Gate 4: Timing audit** | Shifts as backtest, then forks + Vultr workers | Pre-warm worker pool, rehearse click sequence |
@@ -272,8 +275,10 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 |---|---|
 | Live fork and worker provisioning on stage | Pre-warm the Vultr pool, trigger real API calls against warm instances, rehearse the clicks, keep a recorded run as backup and present it as "a run from earlier today" |
 | Model only slightly beats the simple rule | Fine. % of perfect foresight keeps it interesting, and showing where prediction helps and where it doesn't is what HRT respects |
-| Wrong price series | Decide at Gate 0 between Market Index Data and system price, state why, don't switch |
-| Lookahead bugs | Publish-time stamp on every row, features only from data published before decision time, check that only perfect foresight knows the future |
+| Wrong price series | APX Market Index Data, decided. Filter out N2EX rows. Don't switch |
+| Lookahead bugs | Publish-time stamp on every row where Elexon provides one, stated availability delay for MID, features only from data available before decision time, check that only perfect foresight knows the future |
+| Vultr account instance limit | Request an increase at Gate 0. Fall back to fewer, larger workers each replaying several forks |
+| Forks too slow on the day | Primary database is a free service (30 to 90 second forks). If still slow, pre-create the five forks before the demo and have the click dispatch workers into them |
 | Unfamiliar domain for judges | Open with the buy-low-sell-high line |
 | Vultr GPU not available | Train on CPU, lean on parallel workers as the Vultr story |
 
@@ -287,7 +292,7 @@ Time is the subject of the product, not a label on it.
 
 - Prices change every half hour.
 - Features are built at three explicit timescales.
-- Every row carries the time it was published, so the system can prove it never used the future.
+- Every row carries the time it became available, so the system can prove it never used the future.
 - The battery's whole job is choosing *when*.
 - The signature mechanic asks whether each decision was made at the right time by running it earlier and later in parallel timelines and pricing the difference.
 
@@ -299,7 +304,7 @@ It also follows the research habits HRT writes about publicly:
 
 - **Simple first.** Prefer the simpler model if it's as good (HRT: *ML benchmarks*). The neural net stays only if it beats LightGBM.
 - **Don't fool yourself.** Low signal-to-noise domains make it easy to see edges that aren't there. We test only on unseen weeks against honest baselines.
-- **No lookahead.** Publish-time stamping on every row (HRT: *How HRT Thinks About Data*).
+- **No lookahead.** Availability-time stamping on every row (HRT: *How HRT Thinks About Data*).
 
 What sets it apart:
 

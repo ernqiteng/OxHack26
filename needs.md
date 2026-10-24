@@ -1,0 +1,216 @@
+# Tempo: setup needs and feasibility check
+
+Everything below was verified on 24 October 2026 by hitting the real APIs and reading the vendors' current docs. Items marked **unverified** could not be confirmed and must be checked at Gate 0.
+
+---
+
+## Part A: Feasibility verdict on description.md
+
+**Overall: feasible.** The data exists, is free, goes back two years, and carries publish times. Tiger Data exposes a REST fork endpoint. Vultr exposes an instance-creation API. LightGBM and cvxpy are standard. Five things in description.md need adjusting before they are true.
+
+### A1. Zero-copy forks are only fast on Tiger *free* services
+
+Tiger's own fork docs give two different numbers:
+
+| Service type | Fork mechanism | Fork creation time |
+|---|---|---|
+| Free service | Copy-on-write ("Fluid Storage"), zero-copy | **30 to 90 seconds** |
+| Standard (paid) service | Backup restore + WAL replay | **5 to 20+ minutes** |
+
+The "click a decision, five forks spin up live" demo only works if the live database is a **free service**. A standard service fork would take longer than the whole demo. Free services are in beta, run only in `us-east-1`, and exclude tiering, replication, connection pooling, VPC and metrics. You can fork free → free or free → standard, but **not** standard → free. Fork is only allowed when the parent is in `READY` or `PAUSED` state.
+
+**Decision for Gate 0:** run the primary Tempo database as a free service so forks are seconds, not minutes. If free-service storage turns out too small for two years of raw data (limit **unverified**, see B2), keep raw history on a standard service and keep a slim "decision state" free service that forks fast. Fallback if forks are slow on the day: pre-create the five forks before the demo and have the click dispatch workers into existing forks.
+
+**Also:** "run the audit automatically on every completed cycle" implies several forks per day. Do the automatic self-grade as in-process backtest shifts (no forks) and reserve real forks for the on-stage click. Update section 3, Layer 2 accordingly.
+
+### A2. Market Index Data has no publish time
+
+The `MID` dataset rows contain `startTime`, `settlementDate`, `settlementPeriod`, `dataProvider`, `price`, `volume` and **no `publishTime`**. The "every row stamped with when it was published" claim holds for WINDFOR, NDF, FUELINST, FUELHH and INDO (all carry `publishTime`), and for system prices (`createdDateTime`), but not for MID.
+
+**Fix:** stamp MID rows with a derived `available_at = startTime + 30 min + δ`, where δ is a stated assumption (MID is reported by the exchanges shortly after the period closes). Say this explicitly in the honesty panel. Section 3 and section 9 ("Lookahead bugs") should say "publish time where the source provides it, derived availability time for MID".
+
+### A3. Price series: pick APX MID, and say what "trading at it" means
+
+- `N2EXMIDP` rows are frequently `price: 0.00, volume: 0.000` (observed in live data). Filter to `dataProviders=APXMIDP` or you will train on zeros.
+- System price (`DISEBSP`) `createdDateTime` in live data is roughly **24 hours after** the period it describes. It is an imbalance cash-out price, not a tradeable price.
+- Neither series is a price a battery can lock in ahead of time (that would be the day-ahead auction, which Elexon does not publish). For the hackathon the honest framing is: "we assume the battery can transact at the APX within-day index price for each period." Write that assumption into the honesty panel and resolve the Gate 0 "MID vs system price" decision as **APX MID**.
+
+### A4. Non-stream Elexon endpoints are capped at 7 days per request
+
+Tested and confirmed: `/datasets/{X}`, `/balancing/pricing/market-index` and `/balancing/settlement/system-prices/{date}` reject ranges over 7 days (or one settlement date). The `/datasets/{X}/stream` variants returned 60 days, and `/datasets/MID/stream` returned a **full year in one call** (5.6 MB, under a second). Use the stream endpoints for the bulk load. System prices have no stream endpoint, so the two-year backfill is ~730 one-day calls.
+
+### A5. Wind forecast is hourly, not half-hourly
+
+`WINDFOR` rows have hourly `startTime` values. The feature pipeline must interpolate or forward-fill to settlement periods. Minor, but the description currently implies everything is half-hourly.
+
+### Everything else checks out
+
+| Claim in description.md | Status |
+|---|---|
+| Elexon API is free, no key | **Confirmed.** 15 back-to-back requests, all 200. |
+| 48 settlement periods, new data during demo | **Confirmed.** `datasets/metadata/latest` shows FUELINST/FUELHH updating every 30 min. |
+| Two years of history | **Confirmed** for MID, WINDFOR, FUELHH, NDF and system prices (October 2024 returns data). |
+| Tiger hypertables, continuous aggregates, hierarchical aggregates, compression | Standard TimescaleDB features, all current. Hierarchical aggregates (aggregate on aggregate) are supported. The compression API is now called "columnstore" in docs newer than TimescaleDB 2.18; both names work. |
+| Tiger zero-copy forks via API | **Confirmed.** `POST /projects/{project_id}/services/{service_id}/forkService`. See A1 for the speed caveat. |
+| Vultr workers provisioned via API | **Confirmed.** Bearer-token REST API, 30 requests/second per IP. See B4 for account-limit caveat. |
+| Vultr GPU for neural net | **Unverified.** GPU plan availability and quota on a new account could not be confirmed. The description already handles this ("train on CPU if not"). |
+| "X million rows" on screen | **Realistic.** See B3 for row estimates (about 10 million rows over two years if FUELINST is included). |
+| LightGBM quantiles p10/p50/p90 | Standard: three LightGBM models with `objective="quantile"` and `alpha` 0.1/0.5/0.9. |
+| cvxpy LP, 48 periods | Trivial problem size, solves in milliseconds with the default solver. |
+
+---
+
+## Part B: What has to be set up
+
+### B1. Accounts, keys and secrets
+
+| Service | What you need | Where to get it | Notes |
+|---|---|---|---|
+| **Elexon Insights API** | Nothing | https://data.elexon.co.uk/bmrs/api/v1 | No key, no registration. Spec returns `429 too many requests` as a possible response, limit is undocumented. Be polite in the bulk loader (one request in flight, short sleep). |
+| **Tiger Cloud** (Tiger Data) | Account, project ID, client credentials (access key + secret key) | Tiger Console → project settings → client credentials | REST API uses HTTP Basic auth: `-u "$TIGERDATA_ACCESS_KEY:$TIGERDATA_SECRET_KEY"`. Base URL `https://console.cloud.tigerdata.com/public/api/v1`. New accounts get a 30-day Performance-plan trial, no card needed. Also install the CLI (`brew install timescale/tap/tiger`, then `tiger auth login`) for quick manual forks. |
+| **Vultr** | Account with billing, API key | Customer Portal → Account → API | Header `Authorization: Bearer $VULTR_API_KEY`, base URL `https://api.vultr.com/v2`. The key's Access Control list defaults to "Any IPv4 / Any IPv6"; leave that on for the hackathon or add the venue's egress subnet. Keys cannot be scoped per product. |
+| **Git hosting** | Repo | Already exists | Add a `.env.example`; never commit real keys. |
+
+### B2. Tiger Cloud: decisions and unknowns to resolve at Gate 0
+
+- [ ] Create a **free service** as the primary database (fast forks). Region will be `us-east-1`.
+- [ ] **Unverified:** free-service storage cap and how many free services one project may hold. The docs say a free service goes read-only at its storage limit but do not state the limit. Check in Console. You need headroom for the primary plus **five** forks, and each fork is its own service with its own compute.
+- [ ] Confirm `timescaledb` extension version and that `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)` and hierarchical aggregates work on the free tier (expected yes, **unverified** on free specifically).
+- [ ] Confirm compression / columnstore policies are allowed on the free tier (**unverified**).
+- [ ] Time one fork end to end with `fork_strategy: "NOW"` and one with `"LAST_SNAPSHOT"` and record the numbers. `LAST_SNAPSHOT` is faster but can be up to an hour stale; `NOW` takes a fresh snapshot. For the timing audit `NOW` is what you want.
+- [ ] Note the fork response: it returns `service_id`, `initial_password`, `endpoint.host`, `endpoint.port` and `status`. Poll `GET /projects/{project_id}/services/{service_id}` until `status == "READY"` before connecting.
+- [ ] Delete forks after each audit: `DELETE /projects/{project_id}/services/{service_id}`.
+
+Fork request body (verified from the REST reference):
+
+```json
+POST /projects/{project_id}/services/{service_id}/forkService
+{
+  "fork_strategy": "NOW",
+  "name": "audit-<decision_id>-shift-minus2",
+  "environment_tag": "DEV"
+}
+```
+
+### B3. Data: exact endpoints, volumes and quirks
+
+All under `https://data.elexon.co.uk/bmrs/api/v1`. All return JSON. Use `/stream` for history, the non-stream form for live polling (it accepts `format=csv` too).
+
+| Purpose | Endpoint for history (bulk) | Endpoint for live polling | Row key fields | Publish-time field | Est. rows / 2 years |
+|---|---|---|---|---|---|
+| **Price** (chosen series) | `/datasets/MID/stream?from=&to=&dataProviders=APXMIDP` (one year per call works) | `/balancing/pricing/market-index?from=&to=&dataProviders=APXMIDP` (≤7 days) | `startTime`, `settlementDate`, `settlementPeriod`, `price`, `volume` | **none** (derive, see A2) | ~35k (APX only) / ~70k (both) |
+| System price (reference only) | `/balancing/settlement/system-prices/{YYYY-MM-DD}` (one day per call, ~730 calls) | same | `settlementPeriod`, `systemSellPrice` (= buy price now), `netImbalanceVolume` | `createdDateTime` (~24h lag) | ~35k |
+| Wind forecast | `/datasets/WINDFOR/stream?publishDateTimeFrom=&publishDateTimeTo=` | `/forecast/generation/wind/latest?from=&to=` | `startTime` (hourly), `generation` MW | `publishTime` | ~430k |
+| Demand forecast (day-ahead) | `/datasets/NDF/stream?publishDateTimeFrom=&publishDateTimeTo=` | `/forecast/demand/day-ahead/latest?from=&to=` | `startTime`, `settlementPeriod`, `demand` MW, `boundary` | `publishTime` | ~2.1M (re-published every 30 min, heavy) |
+| Actual demand | `/demand/outturn/stream?settlementDateFrom=&settlementDateTo=` | `/datasets/INDO` | `startTime`, `settlementPeriod`, `demand` | `publishTime` | ~35k |
+| Generation mix, half-hourly | `/datasets/FUELHH/stream?publishDateTimeFrom=&publishDateTimeTo=` | `/datasets/FUELHH?publishDateTimeFrom=&publishDateTimeTo=` | `startTime`, `settlementPeriod`, `fuelType`, `generation` | `publishTime` | ~700k |
+| Generation mix, 5-minute (optional, for the row count) | `/datasets/FUELINST/stream?...` | `/datasets/FUELINST?...` | as above, 5-min `startTime` | `publishTime` | ~8M |
+| Freshness check | `/datasets/metadata/latest` | same | `dataset`, `lastUpdated` | | |
+
+Quirks to code around:
+
+- **7-day cap** on every non-stream endpoint. Stream endpoints returned 60 days and 1 year without complaint, but keep bulk calls to ~30 to 90 days each so a single failure is cheap to retry.
+- **N2EX MID rows with zero price/volume.** Filter to `APXMIDP`, or drop rows with `volume == 0`.
+- **Settlement periods 49 and 50** exist on clock-change days (the API notes this). October 25 2026 is a clock-change day in the UK, which is during OxHack. Key rows on `startTime` (UTC), not `(settlementDate, settlementPeriod)`.
+- **NDF volume.** Two years of NDF is about 30 MB per 60 days ≈ 360 MB JSON. Either load only the latest forecast per `startTime` published before each decision time, or load it all and let compression handle it. It is the dataset that makes the "millions of rows, compressed Y%" line true.
+- **WINDFOR is hourly.** Forward-fill or interpolate to half-hours.
+- **Rate limit undocumented.** Spec declares a 429 response. The bulk loader should back off on 429 and never run more than one or two requests concurrently.
+- **Timestamps are UTC with `Z`.** Settlement periods are defined in UK local time (period 1 starts 00:00 local). Keep everything in UTC in the database and convert only for display.
+
+### B4. Vultr: decisions and unknowns to resolve at Gate 0
+
+- [ ] **Account limits.** Vultr caps the number of instances and spend on new accounts, raised only via a limit-increase request that support reviews manually. Check Billing → Limits on day one. You need at least **5 worker instances + 1 backend** running at once. Request an increase immediately if the cap is lower.
+- [ ] **Region.** Pick one close to the Tiger service (`us-east-1` for a free service → Vultr New Jersey `ewr`) to keep fork-to-worker latency low. The venue is in Oxford, so the dashboard backend is better in London (`lhr`); workers can be in `ewr`.
+- [ ] **GPU availability** (**unverified**): list plans with `GET /v2/plans?type=vcg` (GPU plans) and check `locations`. New accounts may have no GPU quota. Decide CPU-vs-GPU training here, per the risk table.
+- [ ] **Pre-warm pool.** Instance boot plus cloud-init is typically 1 to 3 minutes, far too slow to create on click. Create the 5 workers before the demo, keep them running, and have the click trigger a *job* via the API (or a tiny HTTP call to each worker) rather than instance creation. Still show the real Vultr API being called (for example `GET /v2/instances` to pick an idle worker, or a snapshot-based create that was started earlier).
+- [ ] **Worker image.** Build one worker, snapshot it (`POST /v2/snapshots` with `instance_id`), and create the pool from the snapshot with `snapshot_id` plus `user_data` (base64 cloud-init) that injects the Tiger credentials.
+- [ ] **Cost sanity.** Smallest shared-CPU plans are roughly $0.01/hour each. Five workers for 36 hours is a few dollars.
+
+Create-instance call (standard Vultr v2 API):
+
+```http
+POST https://api.vultr.com/v2/instances
+Authorization: Bearer $VULTR_API_KEY
+Content-Type: application/json
+
+{
+  "region": "ewr",
+  "plan": "vc2-1c-1gb",
+  "snapshot_id": "<worker-snapshot-id>",
+  "label": "tempo-worker-1",
+  "hostname": "tempo-worker-1",
+  "sshkey_id": ["<ssh-key-id>"],
+  "user_data": "<base64 cloud-init>",
+  "tags": ["tempo", "worker"]
+}
+```
+
+Rate limit: 30 requests per second per source IP, 429 above that.
+
+### B5. Software and libraries
+
+| Component | Package | Notes |
+|---|---|---|
+| Python | 3.11+ | |
+| HTTP | `httpx` or `requests` | For Elexon, Tiger REST, Vultr REST |
+| Database driver | `psycopg[binary]` (v3) | Hypertable writes, `COPY` for bulk load |
+| Data frames | `pandas`, `pyarrow` | |
+| Forecasting | `lightgbm` | Three models for p10/p50/p90, `objective="quantile"` |
+| Optimiser | `cvxpy` + default solver (`CLARABEL` ships with it; `ECOS`/`SCS` also fine) | 48×3 variables, instant |
+| Neural net (optional) | `torch` | Only if Vultr GPU is available |
+| Backtest / metrics | `numpy`, `scikit-learn` (for calibration curves) | |
+| Dashboard | Any: `streamlit` is fastest; FastAPI + a small frontend if you want click-to-fork wired cleanly | |
+| Scheduling | `apscheduler` or a `while True: sleep(60)` poller | Poll `datasets/metadata/latest`, fetch only when `lastUpdated` moves |
+| Secrets | `python-dotenv` | |
+| Tiger CLI (optional) | `brew install timescale/tap/tiger` | Manual forks and `tiger db connect` for debugging |
+
+### B6. Environment variables
+
+```
+# Tiger Cloud
+TIGERDATA_PROJECT_ID=
+TIGERDATA_ACCESS_KEY=
+TIGERDATA_SECRET_KEY=
+TIGER_PRIMARY_SERVICE_ID=
+TEMPO_DATABASE_URL=postgres://tsdbadmin:<password>@<host>:<port>/tsdb?sslmode=require
+
+# Vultr
+VULTR_API_KEY=
+VULTR_REGION=ewr
+VULTR_WORKER_PLAN=vc2-1c-1gb
+VULTR_WORKER_SNAPSHOT_ID=
+VULTR_SSHKEY_ID=
+
+# Tempo
+ELEXON_BASE_URL=https://data.elexon.co.uk/bmrs/api/v1
+PRICE_PROVIDER=APXMIDP
+BATTERY_CAPACITY_MWH=2
+BATTERY_POWER_MW=1
+BATTERY_RT_EFFICIENCY=0.90
+BATTERY_CYCLE_COST_GBP=20
+MID_AVAILABILITY_DELAY_MIN=10     # the δ from A2, state it on screen
+```
+
+### B7. Database objects to create (so the description's claims are true)
+
+| Object | Type | Purpose |
+|---|---|---|
+| `grid_raw` (or one table per dataset) | hypertable on `start_time`, with `published_at` column | Raw Elexon rows, publish-time stamped |
+| `prices_hh` | continuous aggregate, 30 min | Half-hourly APX MID price |
+| `prices_daily` | continuous aggregate on `prices_hh`, 1 day | Daily spread, mean (hierarchical) |
+| `prices_weekly` | continuous aggregate on `prices_daily`, 1 week | Weekly volatility / regime (hierarchical) |
+| `forecasts` | hypertable | 48-period p10/p50/p90 per decision time |
+| `decisions` | hypertable | `decided_at`, `target_period`, `action` (charge/discharge/hold), `reason`, `forecast_id`, `expected_spread`, `soc_before`, `soc_after` |
+| `battery_state` | hypertable | SoC and cumulative PnL per period (this is what forks write to) |
+| `audits` | hypertable | One row per (decision, shift), `pnl_delta_gbp`, `fork_service_id`, `worker_id`, timings |
+| `backtest_results` | plain table | The honesty table rows |
+| Compression policy | on `grid_raw` chunks older than 7 days | For the "compressed Y%" number |
+
+### B8. Gate 0 checklist (do these in the first hour)
+
+1. [ ] Tiger: create free service, note storage cap, create client credentials, run one fork via REST and time it.
+2. [ ] Vultr: create API key, check account instance limit, list GPU plans, deploy one tiny instance and time boot-to-ready.
+3. [ ] Elexon: run the one-year `MID/stream` call and a one-week `NDF/stream` call, confirm shapes match the table in B3.
+4. [ ] Decide and write down: **APX MID** as the price, MID availability delay δ, battery parameters, Vultr region.
+5. [ ] Confirm UK clock change on 25 Oct 2026 is handled (period 49/50 on that date).
+6. [ ] Put `.env.example` in the repo with every variable from B6.
