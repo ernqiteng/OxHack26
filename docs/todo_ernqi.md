@@ -1,42 +1,29 @@
-# Ernqi: what is left (as of Sat 24 Oct 2026, evening)
+# Ernqi: what is left (updated Sat 24 Oct 2026, late evening)
 
-Status check against [ernqi.md](ernqi.md), done by reading main and Tiger, not by asking. Fix anything here that is wrong.
+Checked against `ayo` after merging your branch (all 203 unit/contract/DB tests green) and against Tiger. Fix anything here that is wrong.
 
-## Done and verified
+## Done
 
-- Phase 0 and 1: fixture with known answers, `simulate`, cost gate, greedy, perfect foresight, walk-forward, `summary`, `scripts/backtest.py`.
-- **Gate 2 reached:** `backtest_results` on Tiger, run `db-20261024T163014Z`, 100 unseen weeks, three strategies, nothing above 100%. Ayo's Honesty tab reads it (it shows the latest `run_id`).
-- Phase 2 partly: `PersistenceForecaster`, `LPOptimiser`, `calibration`, `by_regime`, `weak_statements`, and their tests.
-- Phase 3 mostly: `self_grade` with `test_selfgrade_known.py`, regime breakdown, weak statements. Ayo's replay simulator now resolves to your `tempo.sim.battery` automatically (the stand-in matched your fixture's known answer to the penny before it was swapped out).
+- Phase 0 and 1: fixture, `simulate`, cost gate, greedy, perfect foresight, walk-forward, `summary`, `scripts/backtest.py`. **Gate 2 reached.**
+- Backtest on Tiger with regime labels: run `db-20261024T181359Z`, 300 rows, all labelled (NDF is now backfilled for the full two years, 2.06M rows). The dashboard's Honesty section reads the latest run, so the regime chart is real now.
+- `LightGBMQuantileForecaster` with `save`/`load`, `FEATURES = FEATURE_COLUMNS + horizon_k`, `test_quantile_order.py`, `test_lgbm_beats_persistence.py` (p50 MAE 4.0 vs 6.1 on unseen synthetic days).
+- `PersistenceForecaster`, `LPOptimiser`, `calibration`, `by_regime`, `weak_statements`, `self_grade` and their tests. Ayo's dashboard already calls `self_grade` and `weak_statements`.
 
-## Blocked on Girik, and what to do meanwhile
+## Nothing is blocking you now
 
-`run_decision`, `make_training_set` and the LightGBM forecaster all need Girik's `build_features`, which is still a stub. Girik has been asked to deliver it first. Until then, everything below marked **(no Girik needed)** can be done.
+`build_features` and `FEATURE_COLUMNS` are on main, prices on Tiger are live to the half hour (Girik's poller runs on the backend box), NDF is complete. Everything below is yours to finish. Part A (run_decision) is the last thing between the team and Gate 3.
 
-## To do, in order
+## To do: split into two independent parts
 
-1. **Re-run the backtest with regime labels (no Girik needed).** WINDFOR is now on Tiger for the whole two years, so `regime` no longer has to be NULL. New `run_id`; the dashboard picks up the latest automatically. The Honesty tab's regime chart is empty until this lands.
-2. **`tempo/forecast/lgbm.py::LightGBMQuantileForecaster` (no Girik needed to write it).** Test it on the synthetic fixture's columns for now; wire to `build_features` columns when they exist. Tests: `test_quantile_order.py`, `test_lgbm_beats_persistence.py` with `seed=0, deterministic=True, num_threads=1`.
-3. **`tempo/forecast/dataset.py::make_training_set`** and **`tests/db/test_no_lookahead_training.py`** (needs `build_features`).
-4. **`tempo/decide/engine.py::run_decision`** and **`tests/db/test_run_decision.py`** and the shared **`tests/contracts/test_decisions_contract.py`** (needs `build_features`). This is the single most important missing piece for the demo: without it there are no live decisions, so the Live tab shows an empty schedule and the timing audit has nothing real to click. Ayo's audit expects exactly what ernqi.md says: 48 rows per batch, same `decided_at`, `run_id='live'`, signed `mw`, a `reason` on every hold.
-5. **`tempo` and `tempo_lp` strategies in the walk-forward backtest** (task 6) so the Tempo row appears in the honesty table. Retrain per window on train days only.
-6. **`scripts/train.py`** (task 8).
-7. **Run `run_decision` for real at least once** on Tiger (from a laptop is fine until the backend box exists), then **tell Ayo a `decision_id` worth clicking**. `scripts/demo_reset.py` (Ayo's) will rank candidates for you: it prefers a batch where "as decided" beats every shift and a hold sits nearby. For a convincing demo, several batches over a couple of days are better than one.
-8. **Calibration on real forecasts** once `run_decision` has produced some (the `forecasts` table is empty today). The dashboard's calibration chart is still synthetic.
-9. **A stored windy-week schedule** for Ayo's Replay tab (ayo.md Phase 3 task 2): one week's `(ts, p10, p50, p90, mw)` that Ayo can animate. Agree the shape with Ayo; a `backtest_results`-style table or a parquet in `models/` both work.
-10. **Lint.** `make lint` is red on main, and most of it is yours: `tempo/backtest/metrics.py` (13), `walkforward.py` (6), `optimise/lp.py` (5), `scripts/backtest.py` (4), `sim/battery.py`, `optimise/perfect.py`, `optimise/greedy.py`, `audit/selfgrade.py`, plus the unit tests `test_backtest_synthetic.py`, `test_metrics_summary.py`, `test_selfgrade_known.py`, `test_walkforward_windows.py`, `test_weak_statements.py`. Mostly long lines and `zip(strict=)`; `ruff check --fix` plus a few manual wraps.
-11. **Gate line:** write the Gate 2 date at the top of ernqi.md.
+The remaining work is split so that two people can work in parallel without editing the same files. Each part lists the files it owns, its tasks in order, and its hand-offs.
 
-## Hand-offs
+- **[a.md](a.md): live decisions (Gate 3).** `make_training_set`, `scripts/train.py`, `run_decision`, running it on Tiger, the `decision_id` for Ayo, and calibration on real forecasts.
+- **[b.md](b.md): backtest, replay and clean-up.** The failing LP test, the `tempo`/`tempo_lp` backtest strategies, the replay week for Ayo, lint, and housekeeping.
 
-| To | What | When |
-|---|---|---|
-| Ayo | a `decision_id` to click, with a hold nearby | after item 7 |
-| Ayo | regime-labelled backtest run | after item 1 |
-| Ayo | windy-week schedule for Replay | after item 9 |
-| Girik | which NDF/WINDFOR columns `build_features` must expose for LightGBM | now |
+Both share `tempo/forecast/lgbm.py`, `FEATURE_COLUMNS` and one definition of `horizon_k`; the shared rules are at the bottom of each part.
 
 ## Rules for demo day
 
-- Nobody creates Tiger services or forks on demo day. The free tier holds two services: the primary and the audit's fork. See description.md section 11.
-- `run_id='live'` is sacred: backtests, training and self-grade write under their own ids (`self_grade` already does).
+- Nobody creates Tiger services or forks on demo day: the free tier holds the primary and the audit's fork only (description.md section 11).
+- `run_id='live'` is only ever written by `run_decision`. Backtests, training and self-grade use their own ids.
+- Ayo's rehearsal batch (`run_id='selftest'`, dated 21 Oct) exists on Tiger until the demo; ignore it, it is not live data.
