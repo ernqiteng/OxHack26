@@ -2,22 +2,17 @@
 no forks left behind, under 180 s, equal to the in-process replay. Needs TEMPO_LIVE=1 and Tiger creds.
 
 The free tier allows 2 services per project (primary + 1 fork), so this audits the primary itself with the
-'shared' layout. To stay out of everyone's way it seeds only:
-  - grid_raw MID rows dated 2001-01-01 (the 2-year backfill can never collide with them),
-  - one decision batch under run_id 'selftest' (the dashboard shows run_id 'live' only),
-and deletes all of it, plus its audits and battery_state rows, in `finally`.
-
-It runs the audit twice back to back, because a presenter may click twice and the second fork needs the
-first one's service slot to be free again.
+'shared' layout. It writes only a rehearsal decision batch (run_id 'selftest', tempo.audit.rehearsal)
+against prices already on Tiger, and removes it with its audits and battery_state rows in `finally`.
+It runs the audit twice back to back, because a presenter may click twice.
 """
 
 import time
-from datetime import UTC, datetime, timedelta
 
-import numpy as np
 import psycopg
 import pytest
 
+from tempo.audit import rehearsal
 from tempo.audit.orchestrator import AuditProgress, check_audit_rows, run_audit
 from tempo.audit.pool import default_pool
 from tempo.config import settings
@@ -25,53 +20,13 @@ from tempo.infra.tiger import TigerClient
 
 pytestmark = pytest.mark.live
 
-T0 = datetime(2001, 1, 1, 12, 0, tzinfo=UTC)
-PERIOD = timedelta(minutes=30)
-WINDOW = (T0 - timedelta(days=1), T0 + timedelta(days=2))
-RUN_ID = "selftest"
-
-
-def refresh(conn) -> None:
-    conn.execute("CALL refresh_continuous_aggregate('prices_hh', %s, %s)", WINDOW)
-
 
 def seed(conn) -> int:
-    targets = [T0 + PERIOD * (k + 1) for k in range(48)]
-    hours = np.array([t.hour + t.minute / 60 for t in targets])
-    prices = 60 - 30 * ((hours >= 1) & (hours < 5)) + 40 * ((hours >= 17) & (hours < 19))
-    mw = np.zeros(48)
-    mw[[26, 27, 28, 29]] = 1.0  # charge 01:00-03:00 UTC
-    mw[[9, 10]] = -1.0  # sell 17:00-18:00 UTC
-    rows = [(t, t + timedelta(minutes=40), "APXMIDP", float(p)) for t, p in zip(targets, prices, strict=True)]
-    rows += [(t, t + timedelta(minutes=40), "APXMIDP:volume", 500.0) for t in targets]
-    with conn.cursor() as cur:
-        cur.executemany(
-            "INSERT INTO grid_raw (start_time, available_at, dataset, series, value) "
-            "VALUES (%s, %s, 'MID', %s, %s)",
-            rows,
-        )
-        ids = []
-        for t, m in zip(targets, mw, strict=True):
-            action = "charge" if m > 0 else "discharge" if m < 0 else "hold"
-            cur.execute(
-                "INSERT INTO decisions (decided_at, target_time, action, mw, reason, run_id) "
-                "VALUES (%s, %s, %s, %s, 'selftest', %s) RETURNING decision_id",
-                (T0, t, action, float(m), RUN_ID),
-            )
-            ids.append(cur.fetchone()[0])
-    refresh(conn)
-    n = conn.execute("SELECT count(*) FROM prices_hh WHERE bucket > %s AND bucket < %s", WINDOW).fetchone()[0]
-    assert n == 48, f"prices_hh should expose the 48 seeded prices, got {n}"
-    return ids[0]
+    return rehearsal.seed(conn)
 
 
 def cleanup(conn, did: int | None) -> None:
-    conn.execute("DELETE FROM decisions WHERE run_id = %s", (RUN_ID,))
-    conn.execute("DELETE FROM grid_raw WHERE dataset = 'MID' AND start_time > %s AND start_time < %s", WINDOW)
-    if did is not None:
-        conn.execute("DELETE FROM audits WHERE decision_id = %s", (did,))
-        conn.execute("DELETE FROM battery_state WHERE run_id LIKE %s", (f"audit-{did}-%",))
-    refresh(conn)
+    rehearsal.remove(conn)
 
 
 def one_audit(conn, tiger, pool, did, label):
