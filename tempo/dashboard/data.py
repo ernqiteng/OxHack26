@@ -29,8 +29,55 @@ STRATEGY_LABELS = {
     "simple_rule": "Simple rule (charge 01:00-05:00, sell 17:00-19:00)",
     "persistence_greedy": "Persistence forecast + same optimiser",
     "tempo": "Tempo (LightGBM forecast + same optimiser)",
+    "tempo_lp": "Tempo LP (LightGBM forecast + LP optimiser)",
     "perfect": "Perfect knowledge of the future",
 }
+# Display order for real backtest rows (the synthetic fallback keeps STRATEGIES, which has no tempo_lp).
+SUMMARY_ORDER = ("simple_rule", "persistence_greedy", "tempo", "tempo_lp", "perfect")
+
+
+def main_strategy_row(summary: pd.DataFrame):
+    """The honesty number shown in the header, the honesty sentence and the ladder: the headline strategy
+    (metrics.HEADLINE_STRATEGY, the one the live decider runs) if present, else any other Tempo row, else the
+    best non-perfect row. `summary` is backtest_summary() output, keyed by display label."""
+    from tempo.backtest.metrics import HEADLINE_STRATEGY
+
+    rows = summary[~summary.strategy.str.lower().str.startswith("perfect")]
+    if rows.empty:
+        return None
+    headline = rows[rows.strategy == STRATEGY_LABELS[HEADLINE_STRATEGY]]
+    if not headline.empty:
+        return headline.iloc[0]
+    tempo = rows[rows.strategy.str.lower().str.startswith("tempo")]
+    return (tempo if not tempo.empty else rows.sort_values("pct_of_perfect")).iloc[-1]
+
+
+def calibration_sentence(n: int, coverage: float, target: float = 0.80, tolerance: float = 0.02) -> str:
+    """The honesty line under the calibration chart, with a verdict, never just a number.
+
+    The p10-p90 band is an 80% interval. Below target - tolerance it is overconfident (too narrow), above
+    target + tolerance under-confident (too wide). Decisions use p50 only (greedy and LP), so the band's
+    width never changes a trade: this is a statement about honesty, not about money."""
+    held = f"{n:,} settled live forecasts: the p10–p90 band held {100 * coverage:.0f}% of actual prices"
+    if coverage < target - tolerance:
+        verdict = (
+            "slightly overconfident (the band is too narrow)"
+            if coverage >= target - 0.10
+            else ("overconfident (the band is too narrow)")
+        )
+    elif coverage > target + tolerance:
+        verdict = "under-confident (the band is too wide)"
+    else:
+        verdict = "about right"
+    return (
+        f"{held} against an {100 * target:.0f}% target: {verdict}. "
+        "Trades use the p50 forecast only, so the band's width never changes a decision."
+    )
+
+
+def headline_name(row) -> str:
+    """'Tempo' from 'Tempo (LightGBM forecast + same optimiser)': the short name the sentences use."""
+    return row.strategy.split(" (")[0]
 
 
 def utc_now() -> datetime:
@@ -530,7 +577,7 @@ class DbSource:
             df = self._cached(("summary",), lambda: self._df(sql))
             if df.empty:
                 return df
-            order = {s: i for i, s in enumerate(STRATEGIES)}
+            order = {s: i for i, s in enumerate(SUMMARY_ORDER)}
             df = df.assign(_o=df.strategy.map(order).fillna(99)).sort_values("_o").drop(columns="_o")
             df["strategy"] = df.strategy.map(lambda s: STRATEGY_LABELS.get(s, s))
             df["pct_of_perfect"] = df.pct_of_perfect.astype(float).round(1)

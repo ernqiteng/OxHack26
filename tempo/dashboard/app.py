@@ -20,7 +20,14 @@ import streamlit as st
 from tempo.config import settings
 from tempo.dashboard import jobs, ui
 from tempo.dashboard import theme as T
-from tempo.dashboard.data import SHIFTS, current_settlement_period, pick_source
+from tempo.dashboard.data import (
+    SHIFTS,
+    calibration_sentence,
+    current_settlement_period,
+    headline_name,
+    main_strategy_row,
+    pick_source,
+)
 
 st.set_page_config(page_title="Tempo", page_icon="⚡", layout="wide")
 
@@ -63,15 +70,6 @@ def show_notes(src, *methods: str) -> None:
             st.warning(f"{m}: {note}", icon="⚠️")
 
 
-def main_strategy_row(summary: pd.DataFrame):
-    """The honesty number: Tempo's row if present, else the best non-perfect row."""
-    rows = summary[~summary.strategy.str.lower().str.startswith("perfect")]
-    if rows.empty:
-        return None
-    tempo = rows[rows.strategy.str.lower().str.startswith("tempo")]
-    return (tempo if not tempo.empty else rows.sort_values("pct_of_perfect")).iloc[-1]
-
-
 # ---------------------------------------------------------------------------------------------
 # Header strip
 # ---------------------------------------------------------------------------------------------
@@ -94,7 +92,7 @@ def header_strip() -> None:
         main = main_strategy_row(summary)
         if main is not None:
             weeks = src.backtest_weeks()
-            name = main.strategy.split(" (")[0]
+            name = headline_name(main)
             st.markdown(
                 f"**[{name} captures {main.pct_of_perfect:.1f}% of perfect foresight"
                 + (f" over {weeks} unseen weeks" if weeks else "")
@@ -373,7 +371,7 @@ def section_honesty(src) -> None:
     main = main_strategy_row(summary)
     weeks = src.backtest_weeks()
     if main is not None:
-        name = main.strategy.split(" (")[0]
+        name = headline_name(main)
         sentence = f"{name} captures {main.pct_of_perfect:.1f}% of perfect-foresight profit" + (
             f" over {weeks} unseen weeks." if weeks else "."
         )
@@ -408,11 +406,7 @@ def section_honesty(src) -> None:
         )
         st.altair_chart((line + diag).properties(height=240), width="stretch")
         if cal.attrs.get("n"):
-            cov = cal.attrs.get("coverage_p10_p90")
-            st.caption(
-                f"{cal.attrs['n']:,} settled live forecasts; the p10–p90 band held "
-                f"{100 * cov:.0f}% of actual prices (an honest band holds 80%)."
-            )
+            st.caption(calibration_sentence(cal.attrs["n"], cal.attrs.get("coverage_p10_p90")))
     with c2:
         ui.fig_label("4.3", "By regime: calm weeks vs windy weeks")
         reg = src.backtest_by_regime()

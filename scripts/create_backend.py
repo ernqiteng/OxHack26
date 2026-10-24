@@ -43,6 +43,18 @@ def find_backend(vultr: VultrClient):
     return None
 
 
+def deploy_files(models_dir: Path) -> tuple[list[Path], list[Path]]:
+    """(model files, dashboard data files) under models/ that --deploy copies to /opt/tempo/models.
+
+    models/ is excluded from the rsync because the LightGBM joblibs are big and machine-local, so anything the
+    box needs from it has to be listed here. The model files only exist where the model was trained; the
+    replay week is committed, so it ships from any laptop (without it the Replay tab falls back to synthetic).
+    """
+    model = [*sorted(models_dir.glob("lgbm_*.joblib")), models_dir / "training.json"]
+    data = [models_dir / "replay_week.parquet", models_dir / "replay_week.json"]
+    return [m for m in model if m.exists()], [d for d in data if d.exists()]
+
+
 def deploy(ip: str, key: Path, t0: float, *, enable_poller: bool) -> None:
     rsync_repo(ip, key)
     subprocess.run(
@@ -55,17 +67,17 @@ def deploy(ip: str, key: Path, t0: float, *, enable_poller: bool) -> None:
     print("         " + out.strip().splitlines()[-1])
     # The tempo user exists only after bootstrap, so lock the .env down now.
     ssh(ip, key, "chown tempo:tempo /opt/tempo/.env && chmod 600 /opt/tempo/.env")
-    models = sorted((REPO_ROOT / "models").glob("lgbm_*.joblib")) + [REPO_ROOT / "models" / "training.json"]
-    models = [m for m in models if m.exists()]
-    if len(models) >= 3:
+    models, data = deploy_files(REPO_ROOT / "models")
+    files = (models if len(models) >= 3 else []) + data
+    if files:
         ssh(ip, key, "mkdir -p /opt/tempo/models && chown tempo:tempo /opt/tempo/models")
         subprocess.run(
-            ["scp", "-i", str(key), *SSH_OPTS, *map(str, models), f"root@{ip}:/opt/tempo/models/"],
+            ["scp", "-i", str(key), *SSH_OPTS, *map(str, files), f"root@{ip}:/opt/tempo/models/"],
             check=True,
             capture_output=True,
         )
         ssh(ip, key, "chown -R tempo:tempo /opt/tempo/models")
-        step(t0, f"copied {len(models)} model files to /opt/tempo/models")
+        step(t0, f"copied {len(files)} files to /opt/tempo/models ({', '.join(f.name for f in files)})")
     units = (
         "tempo-dashboard"
         + (" tempo-poller" if enable_poller else "")
