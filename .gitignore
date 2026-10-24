@@ -14,3 +14,4 @@ models/*.pt
 .idea/
 .vscode/
 data/
+*.egg-info/
