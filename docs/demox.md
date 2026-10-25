@@ -128,3 +128,29 @@ This chapter uses the **next morning's live run: 07:00 on 23 October**, for the 
 - *Why does the LP beat the live system?* 68.3% against 66.4% over 100 weeks. Two points wasn't enough to switch the live decider the night before the demo; we prefer the simpler method unless the complex one is clearly better. It's one flag away (`scripts/decide.py --optimiser lp`).
 - *The best and worst weeks are both calm.* Yes. We expected the model to help most in windy weeks, and it doesn't: its lead over "same as yesterday" is 16 points on calm weeks and 12 on windy ones. It's in the README under "What to improve".
 - *Why this week?* `chosen_as`: the median windy week for Tempo in this run (62.9% of perfect), picked by `pick_week`, not by hand. Its totals are checked against the backtest table every time the site's data is exported.
+
+---
+
+## 05 · Timing (about 50 s, most of it while the fork runs)
+
+**Headline:** Proof it picked the right moment.
+
+**In one line:** One click forks the live database on Tiger and five Vultr workers replay the decision shifted earlier and later, in parallel.
+
+**Before going on stage:** run `.venv/bin/python scripts/demo_reset.py` (it must say **GO**). If it recommends a decision other than #1353, open `/timing?decision=N`. Click Run **once** and wait: there is one fork slot.
+
+| Step | On screen | Say |
+|---|---|---|
+| 1 | Decision card: **Charge 1 MW at 11:30, Fri 23 Oct**, the first green bar from Decision. Its reason, and a big **▶ Run timing audit** button | "A forecast can be right and the decision still badly timed. So we test the timing. This is the 11:30 charge you just saw. Was 11:30 the right moment?" **Click Run.** |
+| 2 | The live audit: Decision → **Tiger fork** with a ticking timer → five lines to **five Vultr workers**: 1 h earlier, 30 min earlier, as decided, 30 min later, 1 h later. The real log on the right. About 35–40 s | *(talk through the wait)* "Tiger is taking a zero-copy fork of the live database right now: a writable copy of everything Tempo knew at this moment, so the what-ifs can't touch the live system. When it's ready, five Vultr workers each replay the whole plan shifted in time, on the prices that actually happened. Almost all of this wait is the fork; the five replays take half a second." |
+| 3 | Appears by itself when the results land: **"As decided was the best of the five. An hour later would have cost £34.81."** Five bars: −£5.22, −£3.32, **£0**, −£20.33, −£34.81, each with its worker | "As decided was the best of the five. Rushing by an hour would have lost £5; hesitating by an hour, £35. That's the TIME theme in one chart: the value isn't just the forecast, it's acting at the right moment." |
+| 4 | Self-grade: **7 / 8** completed cycles within half an hour of the best moment · **£6.37** average cost of mistiming | "And it grades itself on every completed cycle, automatically: seven of eight were timed within half an hour of the best possible moment. Most projects stop at a prediction. We turned it into a decision, and then proved whether we made it at the right time." **Close.** |
+
+**If something goes wrong:** the page shows the error with **Run in-process instead** (the same replay on this laptop, about 12 s, same numbers) and **Show last recorded run** (the real fork run from 25 Oct 00:20, labelled "Recorded" on screen). Say: "same replay, run locally."
+
+**If asked**
+- *What exactly is replayed?* The whole 48-half-hour plan Tempo committed to at 07:00, shifted −2 … +2 half-hours, priced at the settled prices, starting from the battery's real state of charge. Same database contents in, same number out: the in-process replay gives identical results.
+- *Why a fork and not just a query?* Each what-if writes its own battery state and profit. The fork is a writable, isolated copy taken at the click, so five timelines can write without touching live data or each other. On Tiger's free tier it's copy-on-write and ready in about 36 s; a standard fork takes minutes.
+- *Why five Vultr workers?* One timeline each, in parallel, pre-warmed (a cold instance takes about 40 s to boot). They sit in New Jersey next to Tiger's us-east-1.
+- *Why one fork, not five?* The free tier allows two services: the primary plus one fork. All five timelines share one fork under separate run ids.
+- *Is 7 of 8 meaningful?* It's a small sample: live decisions started on 21 Oct. It is shown with its count for that reason.

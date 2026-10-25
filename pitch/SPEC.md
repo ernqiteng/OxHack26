@@ -53,7 +53,7 @@ Version A, three steps. "Where it's weak" (calibration, regime gap) is not on th
 - Step 3, replay: ▶ Play button with a 1×/4× switch. Windy week from 11 Jun 2026 (models/replay_week.*, median windy week, 62.9% of perfect). The price line runs, the battery charges and sells, and £ ticks up to £611 with perfect's total as the target.
 - Inputs: Play and speed only.
 
-## 05 · Timing: "Did it pick the right moment?" (agreed, built, awaiting confirmation)
+## 05 · Timing: "Did it pick the right moment?" (agreed, built, confirmed)
 
 Version A, four steps. Bars for the verdict, not stacked timelines.
 
@@ -88,5 +88,5 @@ Colours sampled from toven.ai screenshots. All tokens are in app/globals.css. We
 1. Its words (headline, paragraph, what to say at each step, likely questions) move to `docs/demox.md`, the presenter script.
 2. The page goes full screen: `<Chapter id=… full>`. No text column; the chart card fills the space between the nav and the footer, with only the chapter tag and the step caption inside it.
 
-Done for: 00, 01, 02, 03, 04.
+Done for: 00, 01, 02, 03, 04, 05.
 - Colour for **what actually happened** (agreed): blue #2563c9 (`--color-actual`), 3 px. It's the only blue on the site, so it never reads as a forecast (green) or an action or error (amber). Use it on every chart that shows real outcomes against a forecast.
