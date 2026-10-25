@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Libre_Baskerville } from "next/font/google";
+import Nav from "@/components/Nav";
 import "./globals.css";
 
 const libreBaskerville = Libre_Baskerville({
@@ -31,7 +32,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${libreBaskerville.variable} ${plexSans.variable} ${plexMono.variable}`}
     >
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased">
+        <Nav />
+        {children}
+      </body>
     </html>
   );
 }
