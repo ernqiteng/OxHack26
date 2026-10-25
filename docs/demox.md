@@ -75,8 +75,9 @@ A chapter is added here once it is confirmed.
 
 **If asked**
 - *Why this forecast?* It is a typical live run, not the best one. That day it was off by £21.4 against £33.0 for "same as yesterday". The best run (21 Oct, 19:00) was 18.2 against 31.8, and we chose not to lead with it.
-- *The band misses a lot of the blue line.* Yes. It should contain about 80% of real prices; that day it contained 27 of 48, and across 405 settled live forecasts about 40%. The model is overconfident, and we say so (README, "What to improve"). Trades use only the middle line, so the band's width never changes a decision.
+- *The band misses a lot of the blue line.* Yes. It should contain about 80% of real prices; that day it contained 27 of 48, across 405 settled live forecasts about 40%, and on the 1,344-row holdout 63%. The model is overconfident: its range is too narrow, and we say so. Trades use only the middle line (p50), so the band's width never changes a decision. Fixing it ("recalibration") is in the README under "What to improve".
 - *Where does 28% come from?* The training holdout: 1,344 half-hours after the training window. Mean absolute error £24.4 for LightGBM against £33.9 for persistence (same half-hour yesterday). 1 − 24.4 / 33.9 = 28%.
+- *Is one holdout enough?* There's a stricter test: the walk-forward backtest (chapter 04). Train on 28 days, test on the next 7, slide forward a week, retrain, repeat: 100 times. It measures money, not just forecast error.
 - *What do the feature percentages mean?* Each feature's share of the model's total gain: how much it improved the trees' splits during training. They show what the model relies on, not cause and effect.
 - *Why LightGBM and not a neural network?* Gradient-boosted trees are strong on tabular data, train in about 90 seconds on a laptop CPU, and beat the baseline clearly. We climbed the model ladder only as far as the data justified.
 

@@ -257,7 +257,7 @@ Tiger supplies the data forks; Vultr supplies the machines that replay against t
 
 | Limit | Next step |
 |---|---|
-| The p10–p90 band holds 40% of prices, not 80%. Trades use p50, so it never changes a decision | Recalibrate on recent residuals, then let the LP's conservative mode (buy at p90, sell at p10) use it |
+| The p10–p90 band holds 40% of prices, not 80% (63% on the 1,344-row training holdout). Trades use p50, so it never changes a decision | **Built and tested, not live yet.** Conformal recalibration ([`tempo/forecast/calibrate.py`](tempo/forecast/calibrate.py)) widens p10 and p90 by last week's settled misses; p50 never moves. On the 100-week walk-forward it holds **78.9%** of 33,481 unseen half-hours (raw 43.9%), at about twice the width. Trading on the band doesn't pay (the LP's conservative mode makes 25.6% of perfect on it, against 68.3% on p50), so p50 keeps trading. On 3 days of live forecasts it lifts coverage from 32% to 49–69%: too little history to trust yet |
 | Forecasting helps no more in windy weeks than calm ones | Use the actual demand and generation-mix data already stored in Tiger |
 | Tempo captures 66.4% of perfect foresight | Promote the LP (68.3%) once more live weeks confirm its lead |
 | One fork per click on the free tier | Five forks, one per timeline, is already in the code behind one setting |
@@ -304,7 +304,7 @@ Tempo assumes the battery can trade at the APX Market Index price each period. S
 tempo/            the Python package
   ingest/         Elexon client, backfill, live poller
   features/       point-in-time feature builder
-  forecast/       quantile LightGBM, persistence baseline
+  forecast/       quantile LightGBM, persistence baseline, conformal band recalibration
   optimise/       cost gate, greedy, LP, perfect foresight
   sim/            battery physics and P&L
   decide/         run_decision(), the live pipeline
@@ -312,7 +312,7 @@ tempo/            the Python package
   audit/          timing audit, worker pools, self-grade
   infra/          Tiger Cloud and Vultr API clients
   worker/         FastAPI replay worker
-scripts/          backfill, train, decide, backtest, Vultr fleet and GPU scripts
+scripts/          backfill, train, decide, backtest (--calibration), calibration report, Vultr fleet and GPU scripts
 tests/            unit, contract, database and live tests
 presentation/     the presentation website
 pitch/            the pitch dashboard
