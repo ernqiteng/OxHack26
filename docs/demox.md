@@ -79,3 +79,29 @@ A chapter is added here once it is confirmed.
 - *Where does 28% come from?* The training holdout: 1,344 half-hours after the training window. Mean absolute error £24.4 for LightGBM against £33.9 for persistence (same half-hour yesterday). 1 − 24.4 / 33.9 = 28%.
 - *What do the feature percentages mean?* Each feature's share of the model's total gain: how much it improved the trees' splits during training. They show what the model relies on, not cause and effect.
 - *Why LightGBM and not a neural network?* Gradient-boosted trees are strong on tabular data, train in about 90 seconds on a laptop CPU, and beat the baseline clearly. We climbed the model ladder only as far as the data justified.
+
+---
+
+## 03 · Decision (about 35 s)
+
+**Headline:** It trades when it pays. It holds when it doesn't.
+
+**In one line:** Every cycle has to cover efficiency losses and battery wear. If the spread falls short, Tempo holds, and says why.
+
+This chapter uses the **next morning's live run: 07:00 on 23 October**, for the following 24 hours.
+
+| Step | On screen | Say |
+|---|---|---|
+| 1 | The forecast price for each half-hour, coloured by decision: **charge** 11:30–12:30 (green), **sell** 17:00–18:30 (amber), **hold** everywhere else (grey). The battery level underneath. **7 trading · 41 holding · £189.01 expected**. Plays on arrival | "This is what Tempo decided at seven the next morning. Buy around lunchtime, when power is cheapest, sell into the evening peak, and hold for the other 41 half-hours. Holding is a decision too." |
+| 2 | **Click a green bar** (e.g. 11:30), then **the 04:00 grey bar**. The card shows the real reason for each | "Every half-hour has a reason, logged with the decision. This one: buy now, sell at five. This grey one at 4am: the best trade it could find doesn't cover its costs." |
+| 3 | **The trade it refused:** buy 04:00 at £119.45, sell 07:00 at £138.20. Waterfall: spread **£18.75** − efficiency loss **£13.82** − battery wear **£9.00** = **−£4.07 → HOLD** | "Here's the overnight trade it turned down. The price gap is £18.75. But 10% of the energy is lost on the round trip, and every cycle wears the battery. After both, it would lose £4 a megawatt-hour. So it holds. A system that only predicts prices would have taken that trade." |
+| 4 | Sliders: **battery wear** (live £10/MWh) and **efficiency** (live 90%). **Drag wear down to £4:** the overnight cycle appears (10 trading, £201.10). **Drag it up to £16:** it only sells what's already stored (2 trading). **Click Reset.** | "These are the real optimiser's answers, not an animation. Make the battery cheaper to run and the overnight trade starts to pay, so it takes it. Make it dearer and it stops buying altogether; it only sells what it's already holding, because that energy is paid for." Then → to Proof. |
+
+**Controls:** clicking bars (step 2) and the sliders (step 4) don't advance the step. → moves on.
+
+**If asked**
+- *Why a different day from Prediction?* On 22 October the price spreads were so large that no realistic cost changed the schedule. On the 23rd the cost gate is what decides, so it shows the decision logic honestly.
+- *Was holding at 04:00 right?* On what Tempo knew, yes: the forecast was £119. The real 04:00 price turned out to be £50.58, so with hindsight that trade would have paid. That gap between a good decision and a lucky outcome is exactly what the timing audit (chapter 05) measures.
+- *Are the sliders live?* They're the real `GreedyOptimiser`, run in advance on this exact forecast for every combination shown (155 runs), because the site is static. Re-running it on the stored forecast reproduces the live decisions exactly.
+- *How are the costs worked out?* Per MWh bought, 90% comes back out (√0.9 in, √0.9 out). Efficiency loss is 10% of the sell price. Wear is £20 per full 2 MWh cycle, charged on the energy sold (£9 per MWh bought). A trade happens only if the spread beats both.
+- *Why greedy and not the LP?* Both are built and backtested. The LP captured 68% of perfect foresight against greedy's 66% over 100 weeks. That wasn't enough to change the live decider the night before a demo. The LP is one flag away.

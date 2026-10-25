@@ -34,7 +34,7 @@ Version A, three steps. Calibration moves to 04 Proof.
 - Step 3, what the model looks at: horizontal bars for the top 5 features by gain, in plain English. National demand forecast 22%, wind share of demand 13%, yesterday's price 12%, last week's price 8%, hour of day 8%.
 - Only input: the toggle.
 
-## 03 · Decision: "What did it actually do, and why?" (agreed, built, awaiting confirmation)
+## 03 · Decision: "What did it actually do, and why?" (agreed, built, confirmed)
 
 Version A, four steps. **Changed from 22 Oct to the 23 Oct 07:00 live run** (decision_id 1345–1392, agreed with Ayo): on 22 Oct the costs never change the schedule, and its "16p" hold wasn't decided by the cost gate. Re-running GreedyOptimiser on the stored forecast (start SoC 1.0 MWh) reproduces all 48 stored actions.
 
@@ -88,5 +88,5 @@ Colours sampled from toven.ai screenshots. All tokens are in app/globals.css. We
 1. Its words (headline, paragraph, what to say at each step, likely questions) move to `docs/demox.md`, the presenter script.
 2. The page goes full screen: `<Chapter id=… full>`. No text column; the chart card fills the space between the nav and the footer, with only the chapter tag and the step caption inside it.
 
-Done for: 00, 01, 02.
+Done for: 00, 01, 02, 03.
 - Colour for **what actually happened** (agreed): blue #2563c9 (`--color-actual`), 3 px. It's the only blue on the site, so it never reads as a forecast (green) or an action or error (amber). Use it on every chart that shows real outcomes against a forecast.

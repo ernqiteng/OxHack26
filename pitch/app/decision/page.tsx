@@ -3,7 +3,7 @@ import { DecisionChart } from "@/components/DecisionChart";
 
 export default function DecisionPage() {
   return (
-    <Chapter id="decision">
+    <Chapter id="decision" full>
       <DecisionChart />
     </Chapter>
   );
