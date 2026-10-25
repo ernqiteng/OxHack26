@@ -24,7 +24,7 @@ Version A only (no stats strip, no feature table).
 - Beat 2, "no peeking" timeline. Real publication events on a time axis, and a decision line at 18:00. Events published after the line turn grey and drop out of the feature list. Presenter drags the line.
 - Line to say: "A forecast released at 7pm cannot touch a 6pm decision."
 
-## 02 · Prediction: "Is the forecast any good?" (agreed)
+## 02 · Prediction: "Is the forecast any good?" (agreed, built, awaiting confirmation)
 
 Version A, three steps. Calibration moves to 04 Proof.
 

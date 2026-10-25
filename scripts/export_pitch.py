@@ -201,9 +201,79 @@ def data(conn) -> dict:
     }
 
 
+PRED_DECIDED = datetime(2026, 10, 22, 1, 0, tzinfo=LONDON)  # a typical live run, not the best (SPEC.md, 02)
+MODEL_P50 = TRAINING.parent / "lgbm_p50.joblib"
+FEATURE_NAMES = {  # plain English for the importance bars
+    "demand_fc": "National demand forecast",
+    "wind_share_fc": "Wind share of demand",
+    "price_lag_1d": "Price this time yesterday",
+    "price_lag_7d": "Price this time last week",
+    "hour": "Hour of day",
+    "wind_fc": "Wind forecast",
+    "weekly_std": "Last week’s volatility",
+    "daily_spread_lag_1d": "Yesterday’s spread",
+    "dow": "Day of week",
+    "weekly_mean": "Last week’s average",
+}
+
+
+def prediction(conn) -> dict:
+    import joblib
+
+    rows = conn.execute(
+        """SELECT f.target_time, f.p10, f.p50, f.p90, a.price, y.price
+           FROM forecasts f
+           LEFT JOIN prices_hh a ON a.bucket = f.target_time
+           LEFT JOIN prices_hh y ON y.bucket = f.target_time - interval '1 day'
+           WHERE f.run_id = 'live' AND f.decided_at = %s ORDER BY f.target_time""",
+        (PRED_DECIDED,),
+    ).fetchall()
+    if len(rows) != 48 or any(r[4] is None or r[5] is None for r in rows):
+        raise SystemExit(
+            f"{PRED_DECIDED}: expected 48 settled forecasts with yesterday's price, got {len(rows)}"
+        )
+    periods = [
+        {
+            "t": t.astimezone(LONDON).strftime("%H:%M"),
+            "p10": round(a, 2),
+            "p50": round(b, 2),
+            "p90": round(c, 2),
+            "actual": round(d, 2),
+            "yesterday": round(e, 2),
+        }
+        for t, a, b, c, d, e in rows
+    ]
+    mae = lambda k: sum(abs(p[k] - p["actual"]) for p in periods) / len(periods)  # noqa: E731
+
+    training = json.loads(TRAINING.read_text())
+    model = joblib.load(MODEL_P50)
+    booster = getattr(model, "booster_", model)
+    gain = booster.feature_importance("gain")
+    total = float(sum(gain))
+    ranked = sorted(zip(training["features"], gain, strict=True), key=lambda x: -x[1])
+    holdout = training["holdout"]
+    return {
+        "decided_at": PRED_DECIDED.strftime("%Y-%m-%d %H:%M"),
+        "periods": periods,
+        "day": {"lgbm_mae": round(mae("p50"), 1), "persistence_mae": round(mae("yesterday"), 1)},
+        "holdout": {
+            "rows": holdout["holdout_rows"],
+            "lgbm_mae": round(holdout["p50_mae"], 1),
+            "persistence_mae": round(holdout["persistence_mae"], 1),
+            "pct_better": round(100 * (1 - holdout["p50_mae"] / holdout["persistence_mae"]), 1),
+        },
+        "features": [
+            {"name": f, "label": FEATURE_NAMES.get(f, f), "pct": round(100 * g / total, 1)}
+            for f, g in ranked[:5]
+        ],
+        "feature_count": len(training["features"]),
+    }
+
+
 CHAPTERS = {
     "hook": hook,
     "data": data,
+    "prediction": prediction,
 }
 
 
