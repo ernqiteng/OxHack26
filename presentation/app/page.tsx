@@ -47,9 +47,11 @@ const pipeline = [
   { name: "Audit", sub: "Tiger fork + Vultr" },
 ];
 
-// The pitch dashboard (pitch/), served next to this site at /app/ on the tempo-backend Vultr box (lhr).
-// Override at build time with NEXT_PUBLIC_APP_URL, e.g. http://localhost:3001 when running both locally.
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "/app/";
+// The pitch dashboard (pitch/), served next to this site at /app/ on the tempo-backend Vultr box (lhr). Under
+// `npm run dev` it is pitch's own dev server on port 3001 instead. Override either with NEXT_PUBLIC_APP_URL.
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  (process.env.NODE_ENV === "development" ? "http://localhost:3001" : "/app/");
 
 // Stagger delay for the intro's rise-in (globals.css, html[data-intro="in"] .intro-rise).
 const rise = (ms: number) => ({ "--rise-delay": `${ms}ms` }) as React.CSSProperties;
