@@ -1,0 +1,279 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: var(--font-libre-baskerville), Georgia, serif;
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --color-background: #fafaf8;
+  --color-foreground: #1c1917;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f5f5f0;
+  --color-surface-sunken: #f0f0ea;
+  --color-border: #d6d3d1;
+  --color-border-light: #e7e5e4;
+  --color-text-secondary: #78716c;
+  --color-accent-primary: #44403c;
+  --color-brand: #1a4d3e;
+  --color-brand-tint: #e9f0ed;
+  --color-discharge: #c2410c;
+}
+
+html {
+  font-family: var(--font-serif);
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+
+/* Diagram animations. Each element's resting state (no animation) is its final, meaningful state. */
+
+.flow {
+  stroke-dasharray: 4 6;
+  animation: flow 1s linear infinite;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.soft-pulse {
+  animation: soft-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes soft-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.row-in {
+  animation: row-in 4s ease-out infinite;
+}
+
+@keyframes row-in {
+  0%,
+  10% {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  25%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.squeeze {
+  transform-box: fill-box;
+  transform-origin: left;
+  animation: squeeze 6s ease-in-out infinite;
+}
+
+@keyframes squeeze {
+  0%,
+  15% {
+    transform: scaleX(4.8);
+  }
+  45%,
+  90% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(4.8);
+  }
+}
+
+.squeeze-label {
+  animation: squeeze-label 6s ease-in-out infinite;
+}
+
+@keyframes squeeze-label {
+  0%,
+  40% {
+    opacity: 0;
+  }
+  50%,
+  88% {
+    opacity: 1;
+  }
+  95%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.cow-fork {
+  animation: cow-fork 9s ease-in-out infinite;
+}
+
+@keyframes cow-fork {
+  0% {
+    opacity: 0;
+  }
+  8%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.cow-shared {
+  animation: cow-shared 9s ease-in-out infinite;
+}
+
+@keyframes cow-shared {
+  0%,
+  10% {
+    opacity: 0;
+  }
+  16%,
+  46% {
+    opacity: 1;
+  }
+  52%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.cow-copy {
+  animation: cow-copy 9s ease-in-out infinite;
+}
+
+@keyframes cow-copy {
+  0%,
+  48% {
+    opacity: 0;
+  }
+  56%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.lane {
+  transform-box: fill-box;
+  transform-origin: left;
+  animation: lane 4s ease-in-out infinite;
+}
+
+@keyframes lane {
+  0%,
+  5% {
+    transform: scaleX(0);
+  }
+  65%,
+  92% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+.draw {
+  stroke-dasharray: 1;
+  animation: draw 6s ease-in-out infinite;
+}
+
+@keyframes draw {
+  0%,
+  5% {
+    stroke-dashoffset: 1;
+  }
+  55%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.band-in {
+  animation: band-in 6s ease-in-out infinite;
+}
+
+@keyframes band-in {
+  0%,
+  45% {
+    opacity: 0;
+  }
+  70%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.grow-y {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: grow-y 5s ease-out infinite;
+}
+
+@keyframes grow-y {
+  0%,
+  5% {
+    transform: scaleY(0);
+  }
+  35%,
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+/* Hero background: fade the grid out behind the headline, run pulses of current along the traces. */
+
+.hero-fade {
+  mask-image: radial-gradient(ellipse 50% 45% at center, transparent 30%, black 100%);
+}
+
+.current {
+  stroke-dasharray: 60 940;
+  stroke-dashoffset: 1000;
+  animation: current 7s linear infinite;
+}
+
+@keyframes current {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .current {
+    display: none;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  .flow,
+  .soft-pulse,
+  .row-in,
+  .squeeze,
+  .squeeze-label,
+  .cow-fork,
+  .cow-shared,
+  .cow-copy,
+  .lane,
+  .draw,
+  .band-in,
+  .grow-y {
+    animation: none;
+  }
+}
