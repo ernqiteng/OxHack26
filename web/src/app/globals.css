@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  /* the hero "map": settled prices drawn as terrain on a deep blue sea, like the ICHack26 world map */
+  --map-sea: #0c4a6e;
+  --map-fill: oklch(96.2% 0.044 156.743);
+  --map-stroke: oklch(49.56% 0.03803 161.17);
+  --charge: #15803d;
+  --sell: #e11d48;
+  --hold: #94a3b8;
+  --accent: #2563eb;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-charge: var(--charge);
+  --color-sell: var(--sell);
+  --color-hold: var(--hold);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: #e2e8f0;
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-fade-in { animation: fade-in 0.4s ease-out both; }
+
+@keyframes soft-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+button:disabled.busy { animation: soft-pulse 1.5s ease-in-out infinite; }

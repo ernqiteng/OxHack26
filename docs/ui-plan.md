@@ -1,5 +1,18 @@
 # Tempo UI plan: two pages in the Toven style
 
+> **Dashboard theme superseded (25 Oct).** The dashboard (`tempo/dashboard/`) now follows
+> [grid.iamkate.com](https://grid.iamkate.com/) (National Grid: Live, CC0) rather than the paper theme in
+> section 5: page `#111`, `#222` panels with `#444` header strips, Proza Libre throughout, green links, and a
+> central **plan wheel**: today's 48 settlement periods on a 24-hour clock (outer ring = charge / sell / hold
+> per period, inner ring = forecast p50 on a one-hue ramp, current period outlined), with the plan's blocks
+> tabled on the left (Charge / Sell / Hold bands) and the market and battery on the right. Above it sit two
+> KPI panels (Time · Period · Price · Next action, and Captured = Tempo ÷ Perfect) and a tab-style section
+> nav; below it one panel per demo section, each opened by its generated sentence. Tokens live in
+> `tempo/dashboard/theme.py` and `.streamlit/config.toml`; the page stylesheet and the wheel are in
+> `tempo/dashboard/ui.py` (the wheel is rendered through `st.markdown`, because `st.html` strips inline SVG).
+> Screenshots: `docs/screenshots/grid_top.png`, `grid_full.png`, `grid_audit.png`. Section 4's screen
+> content and chart grammar still apply; the pitch page plan below is unchanged.
+
 Owner: Ayo. Supersedes the visual system in [ui.md](ui.md) (that file's screen content and chart rules still
 apply; its dark Linear theme does not). Demo script in [description.md](description.md) section 6.
 

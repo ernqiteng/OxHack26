@@ -42,7 +42,16 @@ def stubbed(tmp_path, monkeypatch):
     monkeypatch.setattr(cb, "rsync_repo", lambda ip, key: None)
     monkeypatch.setattr(cb, "ssh", lambda ip, key, cmd, **kw: calls["ssh"].append(cmd) or "ok\n")
     monkeypatch.setattr(cb.subprocess, "run", fake_run)
-    monkeypatch.setattr(cb.httpx, "get", lambda *a, **k: type("R", (), {"text": "ok"})())
+
+    # Answer every health check at once: Streamlit wants the text "ok", the API a json source, the sites html.
+    def fake_get(url, **kwargs):
+        text = "ok" if url.endswith("/_stcore/health") else "<html>"
+        return type("R", (), {"text": text, "status_code": 200, "json": lambda self: {"source": "tiger"}})()
+
+    monkeypatch.setattr(cb.httpx, "get", fake_get)
+    monkeypatch.setattr(
+        cb, "rsync_dir", lambda src, ip, key, dest: calls.setdefault("sites", []).append(dest)
+    )
     (tmp_path / "models").mkdir()
     (tmp_path / ".env").write_text("X=1\n")
     return tmp_path / "models", calls
@@ -67,3 +76,26 @@ def test_models_and_replay_week_are_copied_together(stubbed):
     assert {*REPLAY, "training.json", "lgbm_p50.joblib"} <= set(calls["scp"])
     units = next(c for c in calls["ssh"] if c.startswith("systemctl enable"))
     assert "tempo-decider" in units
+
+
+def test_sites_are_built_here_and_copied_to_var_www(stubbed, monkeypatch, tmp_path):
+    """The box has no Node: the two websites are exported on the laptop and mirrored to nginx's roots."""
+    _, calls = stubbed
+    built = [
+        (tmp_path / "presentation" / "out", "/var/www/tempo/presentation/"),
+        (tmp_path / "pitch" / "out", "/var/www/tempo/app/"),
+    ]
+    monkeypatch.setattr(cb, "build_sites", lambda t0: built)
+    cb.deploy("1.2.3.4", Path("key"), 0.0, enable_poller=True, sites=True)
+    assert calls["sites"] == [dest for _, dest in built]
+    units = next(c for c in calls["ssh"] if c.startswith("systemctl enable"))
+    assert "tempo-api" in units and units.endswith("nginx")
+    assert any("chown -R www-data" in c for c in calls["ssh"])
+
+
+def test_default_deploy_touches_no_sites(stubbed):
+    """Without sites=True (and in the older callers) nothing is built and /var/www is left alone."""
+    _, calls = stubbed
+    cb.deploy("1.2.3.4", Path("key"), 0.0, enable_poller=False)
+    assert "sites" not in calls
+    assert "tempo-api" in next(c for c in calls["ssh"] if c.startswith("systemctl enable"))

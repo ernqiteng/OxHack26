@@ -1,0 +1,7 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+# The repo root ignores data/; the site needs its JSON snapshots and the Data chapter page.
+!data/

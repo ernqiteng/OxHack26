@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* Site colours, defined once. Sampled from toven.ai screenshots (25 Oct). */
+@theme {
+  --color-paper: #fafaf8;
+  --color-card: #ffffff;
+  --color-rule: #d5d3d1;
+  --color-grid: #f3f3f1;
+  --color-node: #f6f6f2;
+  --color-node-line: #d8d6d4;
+
+  --color-ink: #1b1917;
+  --color-body: #77716d;
+  --color-label: #5d5a57;
+  --color-faint: #b4b0ac;
+
+  --color-brand: #284c3f;
+  --color-ring: #466559;
+  --color-glow: #ebf1ee;
+
+  /* Actions. Charge = Toven's "cleared" green, sell = its "escalated" amber, hold = neutral. */
+  --color-charge: #74ca7e;
+  --color-charge-ink: #57905e;
+  --color-charge-bg: #f4fdf6;
+  --color-charge-line: #adefbc;
+  --color-sell: #ecaf56;
+  --color-sell-ink: #985f3c;
+  --color-sell-bg: #fefcef;
+  --color-sell-line: #f6db7a;
+  --color-hold: #b4b0ac;
+
+  /* What actually happened: the one blue on the site, so it never reads as a forecast or an action. */
+  --color-actual: #2563c9;
+
+  --font-serif: var(--font-baskerville), Georgia, serif;
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Dashes that flow along a connector. */
+.flow {
+  stroke-dasharray: 4 6;
+  animation: flow 0.9s linear infinite;
+}
+@keyframes flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+/* Faint grid inside every diagram card. */
+.card-grid {
+  background-color: var(--color-card);
+  background-image:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 25% 25%;
+}

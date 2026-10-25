@@ -193,6 +193,10 @@ class SyntheticSource:
             expected_spread=11.2,
         )
 
+    def battery_state(self) -> dict | None:
+        """Latest live state of charge and running P&L, as the decision engine's battery_state rows hold."""
+        return {"ts": period_start(self.now), "soc_mwh": 1.0, "cum_pnl_gbp": 38.4}
+
     # Replay tab -------------------------------------------------------------------------------
     def replay_week(self) -> pd.DataFrame:
         """One windy week, period by period: actual, p10/p50/p90, schedule mw, soc, cumulative pnl."""
@@ -453,6 +457,23 @@ class DbSource:
             return HoldInfo(r.decided_at, r.target_time, r.reason or "", spread)
 
         return self._try("latest_hold", fetch, lambda: None, empty_ok=True)
+
+    def battery_state(self) -> dict | None:
+        sql = (
+            "SELECT ts, soc_mwh, cum_pnl_gbp FROM battery_state WHERE run_id = 'live' "
+            "ORDER BY ts DESC LIMIT 1"
+        )
+
+        def fetch():
+            df = self._cached(("battery_state",), lambda: self._df(sql))
+            if df.empty:
+                return None
+            r = df.iloc[0]
+            return {"ts": r.ts, "soc_mwh": float(r.soc_mwh), "cum_pnl_gbp": float(r.cum_pnl_gbp)}
+
+        return self._try(
+            "battery_state", fetch, self.fallback.battery_state, empty_note="no live battery_state rows yet"
+        )
 
     # -- Replay tab (Phase 3) ---------------------------------------------------------------------
     def replay_week(self) -> pd.DataFrame:

@@ -8,6 +8,7 @@ Built at OxHack 2026. Theme: **TIME**.
 |---|---|
 | Live dashboard | http://136.244.77.120:8501 (Streamlit on the `tempo-backend` Vultr box, London) |
 | Presentation website | [`presentation/`](presentation/), run it with `cd presentation && npm install && npm run dev` ([details](#presentation-website)) |
+| Pitch dashboard | http://136.244.77.120/app/ (what "Open the app" opens), source in [`pitch/`](pitch/): the chapter-by-chapter demo site the presenter drives ([details](#pitch-dashboard)); script in [docs/demox.md](docs/demox.md) |
 
 > "It's buy-low-sell-high for a battery. The hard part isn't the price. It's the timing."
 
@@ -24,10 +25,12 @@ Built at OxHack 2026. Theme: **TIME**.
 9. [Running it locally](#running-it-locally)
 10. [Deploying to Vultr](#deploying-to-vultr)
 11. [Presentation website](#presentation-website)
-12. [Demo day: go/no-go check](#demo-day-gono-go-check)
-13. [Challenges and known limits](#challenges-and-known-limits)
-14. [Docs](#docs)
-15. [Team](#team)
+12. [Pitch dashboard](#pitch-dashboard)
+13. [Demo day: go/no-go check](#demo-day-gono-go-check)
+14. [Challenges and known limits](#challenges-and-known-limits)
+15. [What to improve](#what-to-improve)
+16. [Docs](#docs)
+17. [Team](#team)
 
 ---
 
@@ -328,13 +331,15 @@ The compute layer. Tiger supplies the data forks; Vultr supplies the machines th
               │  tempo-poller    poll.py         │──────┐
               │  tempo-decider   decide.py       │      │ reads / writes
               │  tempo-dashboard Streamlit :8501 │      ▼
+              │  tempo-api       uvicorn :8000   │
+              │  nginx :80  /  /app/  /api/      │
               └────────────────┬─────────────────┘   Tiger Data free service (us-east-1)
                                │ audit click            primary  ──fork──▶  audit fork
                                ▼                                               ▲
               tempo-worker-1..5 (Vultr, ewr) ── POST /replay (bearer token) ───┘
 ```
 
-systemd units live in [`deploy/systemd/`](deploy/systemd/): `tempo-dashboard`, `tempo-poller`, `tempo-decider` (backend) and `tempo-worker` (workers). [`deploy/bootstrap.sh`](deploy/bootstrap.sh) installs a box as either role. Logs go to `/var/log/tempo/*.log`.
+systemd units live in [`deploy/systemd/`](deploy/systemd/): `tempo-dashboard`, `tempo-poller`, `tempo-decider`, `tempo-api` (backend) and `tempo-worker` (workers). [`deploy/bootstrap.sh`](deploy/bootstrap.sh) installs a box as either role; on the backend it also installs nginx with [`deploy/nginx/tempo.conf`](deploy/nginx/tempo.conf), which serves the presentation website at `/`, the pitch dashboard at `/app/` and proxies `/api/` to `tempo-api`. Logs go to `/var/log/tempo/*.log`.
 
 ---
 
@@ -371,6 +376,7 @@ scripts/
   time_vultr.py           time instance create → active → SSH
   time_fork.py            time a Tiger fork
   seed_selftest.py        seed a rehearsal decision batch
+  export_pitch.py         snapshot the pitch dashboard's data from Tiger into pitch/data/
 tests/
   unit/                   no network, no DB
   contracts/              frozen interfaces and schema, point-in-time leak test
@@ -379,6 +385,7 @@ tests/
   fixtures/               synthetic market and Elexon samples
 deploy/                   bootstrap.sh, systemd units, deploy notes
 presentation/             the presentation website (Next.js, static export)
+pitch/                    the pitch dashboard the presenter drives (Next.js, static export)
 docs/                     all project documents
 models/                   trained model files (gitignored)
 ```
@@ -396,6 +403,7 @@ make test-db          # tests that need the local DB
 make test-live        # tests that hit real Tiger / Vultr / Elexon (costs money)
 make lint
 make dashboard        # Streamlit on http://localhost:8501
+make api              # JSON API for pitch/ on http://127.0.0.1:8000
 ```
 
 On Windows, use `.venv/Scripts/python` in place of `.venv/bin/python`, and run `scripts/dev_db.sh` with Git Bash.
@@ -458,7 +466,23 @@ npm run build         # static export to presentation/out/
 npm start             # serve presentation/out/ locally
 ```
 
-"Open the app" links to the live dashboard on the `tempo-backend` Vultr box (`http://136.244.77.120:8501`). To point it elsewhere, set `NEXT_PUBLIC_APP_URL` in `presentation/.env.local` before building.
+"Open the app" opens the pitch dashboard, served next to this site at `/app/` on the `tempo-backend` Vultr box (http://136.244.77.120/app/). To point it elsewhere, for example at `http://localhost:3001` when running both sites locally, set `NEXT_PUBLIC_APP_URL` in `presentation/.env.local` before building.
+
+---
+
+## Pitch dashboard
+
+A static Next.js 15 site in `pitch/`: one full-screen page per chapter (Hook, Data, Prediction, Decision, Proof, Timing), driven by the presenter with ← / →. Every number is real: [`scripts/export_pitch.py`](scripts/export_pitch.py) snapshots it from Tiger into `pitch/data/` (read-only). The Live badge and the timing audit call the API (`make api`); the audit can take a real Tiger fork and use the five Vultr workers. What to say is in [docs/demox.md](docs/demox.md); what each chapter shows, and why, is in [pitch/SPEC.md](pitch/SPEC.md).
+
+```bash
+.venv/bin/python scripts/export_pitch.py   # refresh pitch/data/ from Tiger
+make api                                   # http://127.0.0.1:8000
+cd pitch && npm install
+npm run dev -- -p 3001                     # http://localhost:3001, hot reload
+npm run build && npx serve out -l 3001     # the static site, for presenting
+```
+
+On the box it lives at http://136.244.77.120/app/ with the API at `/api/` on the same address. `scripts/create_backend.py --deploy` builds both websites here with npm (the box has no Node), copies the exports to `/var/www/tempo`, and restarts the units; `--no-sites` skips the builds.
 
 ---
 
@@ -505,6 +529,17 @@ Demo-day rules that follow from the Tiger free tier's two-service limit:
 
 ---
 
+## What to improve
+
+The fixes we'd make next, for the limits above.
+
+- **Recalibrate the band.** Conformal adjustment on recent residuals, so p10–p90 really holds about 80% of prices. Then the LP's conservative mode (buy at p90, sell at p10) can use it.
+- **Better wind and demand features.** The model should help most in windy weeks and doesn't yet. Actual demand (INDO) and the generation mix (FUELHH) are already stored in Tiger but not used by the model.
+- **Room to the ceiling.** Tempo captures 66.4% of perfect foresight (worst week 31.2%). The LP optimiser reaches 68.3% and is one flag away (`scripts/decide.py --optimiser lp`).
+- **Reason strings in UK time.** `greedy.py` prints the times inside its reasons in UTC; the pitch site converts them, the API and Streamlit show them as stored.
+
+---
+
 ## Docs
 
 | File | What it is |
@@ -521,6 +556,8 @@ Demo-day rules that follow from the Tiger free tier's two-service limit:
 | [docs/ui-plan.md](docs/ui-plan.md) | UI plan: presentation page and dashboard, tokens, motion spec |
 | [docs/ui.md](docs/ui.md) | Dashboard screen content, chart grammar and audit choreography |
 | [deploy/README.md](deploy/README.md) | Manual deploy notes |
+| [docs/demox.md](docs/demox.md) | Presenter script for the pitch dashboard: what to say at each step of each chapter |
+| [pitch/SPEC.md](pitch/SPEC.md) | What each chapter of the pitch dashboard shows, agreed before it was built |
 | [info.md](info.md) | Pre-hackathon idea and research. Superseded: don't quote it in the pitch |
 
 ---

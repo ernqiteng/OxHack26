@@ -1,0 +1,71 @@
+{
+ "decision": {
+  "id": 1353,
+  "decided_at": "Fri 23 Oct 07:00",
+  "target": "11:30",
+  "day": "Fri 23 Oct",
+  "action": "charge",
+  "mw": 1.0,
+  "why": {
+   "kind": "charge",
+   "text": "Buy now to sell at 17:00 (\u00a3203.85).",
+   "partner": "17:00",
+   "spread": 31.08,
+   "cost": 29.38,
+   "loss": 20.38,
+   "deg": 9.0
+  }
+ },
+ "recorded": {
+  "started_at": "Sun 25 Oct 00:20",
+  "elapsed_s": 31.2,
+  "rows": [
+   {
+    "shift": -2,
+    "label": "1 h earlier",
+    "pnl_gbp": 143.09,
+    "pnl_delta_gbp": -5.22,
+    "worker_id": "tempo-worker-1",
+    "forked": true
+   },
+   {
+    "shift": -1,
+    "label": "30 min earlier",
+    "pnl_gbp": 145.0,
+    "pnl_delta_gbp": -3.32,
+    "worker_id": "tempo-worker-2",
+    "forked": true
+   },
+   {
+    "shift": 0,
+    "label": "as decided",
+    "pnl_gbp": 148.32,
+    "pnl_delta_gbp": 0.0,
+    "worker_id": "tempo-worker-3",
+    "forked": true
+   },
+   {
+    "shift": 1,
+    "label": "30 min later",
+    "pnl_gbp": 127.99,
+    "pnl_delta_gbp": -20.33,
+    "worker_id": "tempo-worker-4",
+    "forked": true
+   },
+   {
+    "shift": 2,
+    "label": "1 h later",
+    "pnl_gbp": 113.51,
+    "pnl_delta_gbp": -34.81,
+    "worker_id": "tempo-worker-5",
+    "forked": true
+   }
+  ]
+ },
+ "self_grade": {
+  "n_cycles": 8,
+  "within_one": 7,
+  "pct_within_one": 87.5,
+  "mean_cost_gbp": 6.37
+ }
+}
