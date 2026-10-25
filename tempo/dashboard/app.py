@@ -397,9 +397,9 @@ def section_replay(src) -> None:
         pd.Timestamp(week.ts.iloc[-1]).tz_convert("UTC"),
     )
     span = (
-        f"{first:%-d} to {last:%-d %B %Y}"
+        f"{first.day} to {last.day} {last:%B %Y}"
         if first.month == last.month
-        else f"{first:%-d %B} to {last:%-d %B %Y}"
+        else f"{first.day} {first:%B} to {last.day} {last:%B %Y}"
     )
     with ui.panel("replay"):
         ui.section(
