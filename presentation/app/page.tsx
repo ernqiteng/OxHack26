@@ -50,6 +50,9 @@ const pipeline = [
 // The live Streamlit dashboard on the tempo-backend Vultr box (lhr). Override at build time with NEXT_PUBLIC_APP_URL.
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://136.244.77.120:8501";
 
+// Stagger delay for the intro's rise-in (globals.css, html[data-intro="in"] .intro-rise).
+const rise = (ms: number) => ({ "--rise-delay": `${ms}ms` }) as React.CSSProperties;
+
 const code = "font-mono text-[0.9em] text-brand";
 const link = "font-semibold text-brand underline decoration-brand/30 underline-offset-4 hover:decoration-brand";
 
@@ -135,63 +138,64 @@ const rows = [
 export default function Home() {
   return (
     <main>
-      <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 text-center sm:px-6">
-        <HeroBackground />
-        <div className="relative flex w-full max-w-xl flex-col items-center">
-          <h1 className="text-[2.5rem] leading-[1.05] font-bold tracking-tight sm:text-[3.75rem] lg:text-[4.5rem]">
-            Tempo
-          </h1>
-          <p className="mt-6 max-w-xl font-sans text-lg leading-relaxed text-text-secondary">
-            Tempo turns live grid data into forecasts of Britain&apos;s half-hourly electricity prices, and those
-            forecasts into decisions on when a grid battery should charge, sell or hold. Then it proves
-            whether each decision was made at the right time.
-          </p>
-          <div className="mt-10 flex w-full flex-col items-center justify-center gap-3 font-sans font-semibold sm:flex-row">
-            <Link
-              href="/#how-it-works"
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-brand bg-background px-6 py-3 text-brand transition-colors hover:bg-brand-tint"
-            >
-              See how it works
-              <ArrowDown className="h-4 w-4" aria-hidden />
-            </Link>
-            <a
-              href={APP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-6 py-3 text-white transition-opacity hover:opacity-90"
-            >
-              Open the app
-              <ArrowUpRight className="h-4 w-4" aria-hidden />
-            </a>
+      <section id="about" className="scroll-mt-16">
+        <div className="relative overflow-hidden">
+          <div className="intro-grid absolute inset-0">
+            <HeroBackground />
           </div>
-        </div>
-      </section>
-
-      <section id="about" className="scroll-mt-16 border-t border-border-light">
-        <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-24 sm:px-6 lg:grid-cols-2 lg:gap-16">
-          <Reveal>
-            <p className="font-mono text-xs tracking-[0.2em] text-text-secondary uppercase">About</p>
-            <h2 className="mt-4 text-[1.875rem] leading-tight font-bold tracking-tight sm:text-[2.25rem]">
-              A battery trader that shows its working.
-            </h2>
-            <p className="mt-6 font-sans text-lg leading-relaxed text-text-secondary">
-              Great Britain prices electricity in 48 half-hour blocks a day. Prices crash overnight when the wind
-              blows and spike at 6pm when everyone gets home. A grid battery profits from that gap, but only if it
-              buys and sells at the right moments.
-            </p>
-            <p className="mt-4 font-sans text-lg leading-relaxed text-text-secondary">
-              Tempo makes that call every half hour, explains each one, and lets anyone check the timing
-              afterwards.
-            </p>
-          </Reveal>
-          <Reveal className="grid gap-4 sm:grid-cols-2">
-            {facts.map((fact) => (
-              <div key={fact.name} className="rounded-xl border border-border-light bg-surface p-6">
-                <p className="font-mono text-sm font-semibold text-brand">{fact.name}</p>
-                <p className="mt-2 font-sans text-sm leading-relaxed text-text-secondary">{fact.text}</p>
+          <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-4 pt-32 pb-24 sm:px-6 lg:grid-cols-2 lg:gap-16">
+            <div>
+              <p className="intro-rise font-mono text-xs tracking-[0.2em] text-text-secondary uppercase" style={rise(60)}>
+                About
+              </p>
+              <h2
+                className="intro-rise mt-4 text-[1.875rem] leading-tight font-bold tracking-tight sm:text-[2.25rem]"
+                style={rise(60)}
+              >
+                A battery trader that shows its working.
+              </h2>
+              <div className="intro-rise" style={rise(120)}>
+                <p className="mt-6 font-sans text-lg leading-relaxed text-text-secondary">
+                  Great Britain prices electricity in 48 half-hour blocks a day. Prices crash overnight when the
+                  wind blows and spike at 6pm when everyone gets home. A grid battery profits from that gap, but
+                  only if it buys and sells at the right moments.
+                </p>
+                <p className="mt-4 font-sans text-lg leading-relaxed text-text-secondary">
+                  Tempo makes that call every half hour, explains each one, and lets anyone check the timing
+                  afterwards.
+                </p>
               </div>
-            ))}
-          </Reveal>
+              <div
+                className="intro-rise mt-8 flex flex-col gap-3 font-sans font-semibold sm:flex-row"
+                style={rise(180)}
+              >
+                <Link
+                  href="/#how-it-works"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-brand bg-background px-6 py-3 text-brand transition-colors hover:bg-brand-tint"
+                >
+                  See how it works
+                  <ArrowDown className="h-4 w-4" aria-hidden />
+                </Link>
+                <a
+                  href={APP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-6 py-3 text-white transition-opacity hover:opacity-90"
+                >
+                  Open the app
+                  <ArrowUpRight className="h-4 w-4" aria-hidden />
+                </a>
+              </div>
+            </div>
+            <div className="intro-rise grid gap-4 sm:grid-cols-2" style={rise(240)}>
+              {facts.map((fact) => (
+                <div key={fact.name} className="rounded-xl border border-border-light bg-surface p-6">
+                  <p className="font-mono text-sm font-semibold text-brand">{fact.name}</p>
+                  <p className="mt-2 font-sans text-sm leading-relaxed text-text-secondary">{fact.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 pb-24 sm:px-6 lg:grid-cols-2 lg:gap-16">
