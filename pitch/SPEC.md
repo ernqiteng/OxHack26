@@ -44,7 +44,7 @@ Version A, four steps. **Changed from 22 Oct to the 23 Oct 07:00 live run** (dec
 - Step 4, what-if sliders: wear £0–30/MWh (live 10) and efficiency 75–95% (live 90). There are 155 precomputed runs of the real optimiser. Wear ≤ £4 brings the overnight cycle back (10 trading, £201.10). £12 shrinks the daytime cycle. ≥ £16 only sells the stored energy (2 trading, £181.42).
 - To flag to Ernqi: greedy.py's reason strings print UTC times, and the old dashboard and API show them as they are.
 
-## 04 · Proof: "Does it make money, compared with the alternatives?" (agreed, built, awaiting confirmation)
+## 04 · Proof: "Does it make money, compared with the alternatives?" (agreed, built, confirmed)
 
 Version A, three steps. "Where it's weak" (calibration, regime gap) is not on the site. It is in README.md under "What to improve".
 
@@ -88,5 +88,5 @@ Colours sampled from toven.ai screenshots. All tokens are in app/globals.css. We
 1. Its words (headline, paragraph, what to say at each step, likely questions) move to `docs/demox.md`, the presenter script.
 2. The page goes full screen: `<Chapter id=… full>`. No text column; the chart card fills the space between the nav and the footer, with only the chapter tag and the step caption inside it.
 
-Done for: 00, 01, 02, 03.
+Done for: 00, 01, 02, 03, 04.
 - Colour for **what actually happened** (agreed): blue #2563c9 (`--color-actual`), 3 px. It's the only blue on the site, so it never reads as a forecast (green) or an action or error (amber). Use it on every chart that shows real outcomes against a forecast.

@@ -3,7 +3,7 @@ import { ProofChart } from "@/components/ProofChart";
 
 export default function ProofPage() {
   return (
-    <Chapter id="proof">
+    <Chapter id="proof" full>
       <ProofChart />
     </Chapter>
   );

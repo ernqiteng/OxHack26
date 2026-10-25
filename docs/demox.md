@@ -105,3 +105,26 @@ This chapter uses the **next morning's live run: 07:00 on 23 October**, for the 
 - *Are the sliders live?* They're the real `GreedyOptimiser`, run in advance on this exact forecast for every combination shown (155 runs), because the site is static. Re-running it on the stored forecast reproduces the live decisions exactly.
 - *How are the costs worked out?* Per MWh bought, 90% comes back out (√0.9 in, √0.9 out). Efficiency loss is 10% of the sell price. Wear is £20 per full 2 MWh cycle, charged on the energy sold (£9 per MWh bought). A trade happens only if the spread beats both.
 - *Why greedy and not the LP?* Both are built and backtested. The LP captured 68% of perfect foresight against greedy's 66% over 100 weeks. That wasn't enough to change the live decider the night before a demo. The LP is one flag away.
+
+---
+
+## 04 · Proof (about 40 s)
+
+**Headline:** 66% of perfect foresight, on 100 unseen weeks.
+
+**In one line:** Walk-forward tested against a fixed schedule, a persistence forecast and the theoretical ceiling. It never lost money in a week.
+
+| Step | On screen | Say |
+|---|---|---|
+| 1 | The **strategy ladder**, bars growing from worst to best: Simple rule **33.1%** (lost money in 17 weeks) → Same as yesterday **52.9%** → **Tempo 66.4%** (£58,711) → Tempo LP 68.3% → Perfect foresight 100%. Plays on arrival | "We don't report accuracy. We report money, on 100 weeks the model never trained on, as a share of the most anyone could have made. A fixed schedule gets 33%, and it lost money in 17 weeks. Using yesterday's prices as the forecast, with our optimiser, gets 53%. Tempo gets 66%: same optimiser, so those 13 points are the model. Perfect knowledge of the future is the ceiling." |
+| 2 | **Every week as a dot**, grey for calm and green for windy, with lines at 52.9% and 66.4%. **Worst 31.2%** (14 May 2026) and **best 90.2%** (30 Jul 2026) circled. **Losing weeks: 0** | "Here's every one of those hundred weeks, not a highlight reel. The worst still captured 31%. The best, 90%. Not one losing week." |
+| 3 | **Replay.** Click **4×** if short of time, then **▶ Play**. The real price draws in blue, with green and amber dots for charge and sell, the battery underneath, and Tempo's profit climbing against perfect foresight's dashed line. It ends at **£611.32** against **£972.56** | "Let's watch one. This is the median windy week, chosen by rule, not by hand. Each dot is a real decision made only on what was known at the time." *(as it ends)* "£611 against a perfect £972: 63% of what was possible, on prices it couldn't see." Then → to Timing. |
+
+**Controls:** ▶ Play / Pause and the 1× / 4× switch don't advance the step. At 1× the week takes about 22 s, at 4× about 5 s. → moves on.
+
+**If asked**
+- *What's walk-forward?* Train on 28 days, test on the following 7, then roll forward a week and retrain. Every test week is after its training data, so nothing is tested on data the model has seen. 100 weeks, 24 Oct 2024 to 24 Oct 2026, run `db-20261024T202144Z`.
+- *Why % of perfect, not pounds?* A windy week can be worth five times a calm one. Dividing by the best possible profit makes weeks comparable and the number honest.
+- *Why does the LP beat the live system?* 68.3% against 66.4% over 100 weeks. Two points wasn't enough to switch the live decider the night before the demo; we prefer the simpler method unless the complex one is clearly better. It's one flag away (`scripts/decide.py --optimiser lp`).
+- *The best and worst weeks are both calm.* Yes. We expected the model to help most in windy weeks, and it doesn't: its lead over "same as yesterday" is 16 points on calm weeks and 12 on windy ones. It's in the README under "What to improve".
+- *Why this week?* `chosen_as`: the median windy week for Tempo in this run (62.9% of perfect), picked by `pick_week`, not by hand. Its totals are checked against the backtest table every time the site's data is exported.
