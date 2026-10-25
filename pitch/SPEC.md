@@ -16,7 +16,7 @@ One real day of GB prices, revealed in five steps. The presenter presses → to 
 - Live badge in a corner: "● LIVE · period N · £X/MWh" from the API. Hidden if the API can't be reached.
 - No inputs.
 
-## 01 · Data: "Where does it come from, and can you trust it?" (agreed, built, awaiting confirmation)
+## 01 · Data: "Where does it come from, and can you trust it?" (agreed, built, confirmed)
 
 Version A only (no stats strip, no feature table).
 
@@ -88,5 +88,5 @@ Colours sampled from toven.ai screenshots. All tokens are in app/globals.css. We
 1. Its words (headline, paragraph, what to say at each step, likely questions) move to `docs/demox.md`, the presenter script.
 2. The page goes full screen: `<Chapter id=… full>`. No text column; the chart card fills the space between the nav and the footer, with only the chapter tag and the step caption inside it.
 
-Done for: 00.
+Done for: 00, 01.
 - Colour for **what actually happened** (agreed): blue #2563c9 (`--color-actual`), 3 px. It's the only blue on the site, so it never reads as a forecast (green) or an action or error (amber). Use it on every chart that shows real outcomes against a forecast.

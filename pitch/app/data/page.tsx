@@ -3,7 +3,7 @@ import { DataChart } from "@/components/DataChart";
 
 export default function DataPage() {
   return (
-    <Chapter id="data">
+    <Chapter id="data" full>
       <DataChart />
     </Chapter>
   );
