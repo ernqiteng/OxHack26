@@ -3,12 +3,12 @@ import { Camera, Server, Tag, Terminal } from "lucide-react";
 import FeatureRow from "@/components/FeatureRow";
 import ProgressRail from "@/components/ProgressRail";
 import Reveal from "@/components/Reveal";
-import { Fleet, Provisioning, Scheduler } from "@/components/VultrDiagrams";
+import { Fleet, Gpu, Provisioning, Scheduler } from "@/components/VultrDiagrams";
 
 export const metadata: Metadata = { title: "Vultr · Tempo" };
 
 const features = [
-  { icon: Server, name: "Cloud compute", text: "vc2 instances: 1 vCPU workers in New Jersey, a 2 GB backend in London." },
+  { icon: Server, name: "Cloud compute", text: "vc2 instances: 1 vCPU workers in New Jersey, a 2 GB backend in London, and an NVIDIA A16 rented by the minute." },
   { icon: Camera, name: "Snapshots", text: "One bootstrapped image, cloned into every worker." },
   { icon: Tag, name: "Instance tags", text: "tempo-worker marks the pool; anything untagged is never dispatched to." },
   { icon: Terminal, name: "v2 API", text: "Create, list, lease and tear down the fleet from Python." },
@@ -77,6 +77,34 @@ const rows = [
       <>Snapshot ID, SSH key and worker token are written straight into .env</>,
     ],
   },
+  {
+    title: "A GPU by the minute, to answer one question",
+    diagram: <Gpu />,
+    points: [
+      <>
+        <code className={code}>gpu_box.py</code>: one NVIDIA A16 (<code className={code}>vcg-a16-6c-60g-16vram</code>, 6
+        vCPU, 60 GB, 16 GB VRAM) in <code className={code}>lhr</code>: create, check <code className={code}>nvidia-smi</code>{" "}
+        and <code className={code}>torch.cuda</code>, report uptime and cost, delete
+      </>,
+      <>
+        The plan is easy to miss: <code className={code}>GET /v2/plans?type=vcg</code> lists only L40S boxes with no
+        locations; the A16 only appears under <code className={code}>type=all</code>
+      </>,
+      <>
+        Why a GPU at all: the walk-forward backtest retrains a model for every one of 100 weeks, and a parameter sweep
+        multiplies that. Would GPU training make it faster, and would it forecast better?
+      </>,
+      <>
+        The answer, measured on the same box: 500 models in 17.4 s on the A16 against 28.0 s on its CPU, 1.6× faster,
+        and the forecasts came out the same. Gradient-boosted trees on tabular features don&apos;t need one
+      </>,
+      <>
+        So the live system stays CPU-only (90 s to train on a laptop), and the GPU is created when there&apos;s a
+        question to answer and deleted when idle: three boxes, about 29 box-minutes, $1.44, each billed a one-hour
+        minimum
+      </>,
+    ],
+  },
 ];
 
 export default function Vultr() {
@@ -90,7 +118,8 @@ export default function Vultr() {
           </h1>
           <p className="mt-6 max-w-xl font-sans text-lg leading-relaxed text-text-secondary">
             Tiger supplies the data forks; Vultr supplies the machines that replay against them. Five pre-warmed
-            workers turn one click into five parallel timelines, and a London box keeps Tempo running live.
+            workers turn one click into five parallel timelines, a London box keeps Tempo running live, and a GPU was
+            rented by the minute to test whether training needed one. It didn&apos;t.
           </p>
         </Reveal>
         <Reveal className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
