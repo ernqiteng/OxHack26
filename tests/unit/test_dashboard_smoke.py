@@ -33,7 +33,7 @@ def test_app_runs_without_exceptions(app):
     assert app.title[0].value == "Tempo"
     heads = subheaders(app)
     assert any("period" in h and "of 48" in h for h in heads)  # Live sentence
-    assert any(h.startswith("A windy week") for h in heads)  # Replay sentence
+    assert any(h.startswith("The windy week of") and "played forward" in h for h in heads)  # Replay sentence
     assert any("Click a decision" in h for h in heads)  # Audit sentence before a run
     assert any("% of perfect-foresight profit" in h for h in heads)  # Honesty sentence
     assert any("Most projects stop at a prediction" in h for h in heads)  # About
