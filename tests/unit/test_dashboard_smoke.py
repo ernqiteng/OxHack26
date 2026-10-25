@@ -30,7 +30,7 @@ def subheaders(at):
 
 def test_app_runs_without_exceptions(app):
     assert not app.exception, [e.value for e in app.exception]
-    assert app.title[0].value == "Tempo"
+    assert app.title[0].value == "Tempo: Live"
     heads = subheaders(app)
     assert any("period" in h and "of 48" in h for h in heads)  # Live sentence
     assert any(h.startswith("The windy week of") and "played forward" in h for h in heads)  # Replay sentence
@@ -40,8 +40,12 @@ def test_app_runs_without_exceptions(app):
     assert any("settlement period" in c.value for c in app.caption)  # header strip
 
 
-def test_live_section_has_pills_and_charts(app):
-    assert any("Current period" in m.label for m in app.metric)
+def test_live_section_has_kpis_wheel_and_charts(app):
+    htmls = [h.value for h in app.get("html")]
+    assert any("Next action" in h and "tempo-kpi" in h for h in htmls)  # the KPI panel
+    assert any("Captured" in h for h in htmls)  # the honesty equation
+    wheel = [m.value for m in app.markdown if "tempo-wheel" in m.value]
+    assert len(wheel) == 1 and "<svg" in wheel[0] and "Charge" in wheel[0] and "Battery" in wheel[0]
     assert len(app.get("vega_lite_chart")) >= 5  # price, strip, replay x3, ladder, calibration, regime
 
 

@@ -18,7 +18,7 @@ OxHack 2026. Theme: TIME. Track: HRT, Best Use of Data for Predictions and Decis
 | [docs/a.md](docs/a.md), [docs/b.md](docs/b.md) | Ernqi's remaining work split in two: live decisions (Part A) and backtest, replay and clean-up (Part B). Both done |
 | [docs/time.md](docs/time.md) | Planned but not built: parallel backtest on the Vultr workers, battery-size sweep |
 | [info.md](info.md) | Pre-hackathon idea and research. Superseded: don't quote it in the pitch |
-| [docs/ui-plan.md](docs/ui-plan.md) | Two-page UI plan: Toven-style pitch page and dashboard, extracted tokens, motion spec, build order |
+| [docs/ui-plan.md](docs/ui-plan.md) | Two-page UI plan: Toven-style pitch page; dashboard now in the grid.iamkate.com style with the plan wheel (note at the top) |
 | [docs/ui.md](docs/ui.md) | Dashboard screen content, chart grammar and audit choreography (theme superseded by ui-plan.md) |
 
 ## Quick start
@@ -30,6 +30,7 @@ make db               # local TimescaleDB in Docker + schema
 make test             # unit + contract tests
 make test-db          # tests that need the local DB
 make dashboard
+make api && make web   # Next.js frontend on :3000 (see web/README.md)
 ```
 
 ## Before every rehearsal and before going on stage

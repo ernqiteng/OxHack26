@@ -19,6 +19,8 @@ RSYNC_EXCLUDES = [
     ".env",
     ".venv/",
     ".git/",
+    "web/node_modules/",
+    "web/.next/",
     "__pycache__/",
     "*.pyc",
     "*.egg-info/",
