@@ -199,3 +199,73 @@ export function Provisioning() {
     </svg>
   );
 }
+
+export function Gpu() {
+  const steps = [
+    { x: 16, label: "create", sub: "A16 · lhr" },
+    { x: 126, label: "nvidia-smi ✓", sub: "driver, CUDA" },
+    { x: 236, label: "torch.cuda ✓", sub: "device found" },
+    { x: 346, label: "delete", sub: "$0.48 min. hour", warn: true },
+  ];
+
+  return (
+    <svg viewBox="0 0 480 300" className={svg} role="img" aria-label="gpu_box.py creates one NVIDIA A16 in London, checks it and deletes it; training 500 models took 17.4 s on the GPU against 28.0 s on the CPU, 1.6 times faster, with no better forecasts, so the live system stays on CPU">
+      <defs>
+        <marker id="gpu-arrow" viewBox="0 0 8 8" refX={7} refY={4} markerWidth={7} markerHeight={7} orient="auto">
+          <path d="M0 0 L8 4 L0 8 Z" className="fill-brand" />
+        </marker>
+      </defs>
+
+      <text x={16} y={20} fontSize={10} className="fill-brand font-mono">
+        gpu_box.py · one NVIDIA A16, by the minute
+      </text>
+      {steps.map((s, i) => (
+        <g key={s.label}>
+          {i > 0 && <path d={`M${s.x - 12} 54 H${s.x - 2}`} strokeWidth={1.5} markerEnd="url(#gpu-arrow)" className="stroke-brand" />}
+          <rect x={s.x} y={32} width={98} height={44} rx={8} className={s.warn ? "fill-surface stroke-discharge" : "fill-brand-tint stroke-brand"} />
+          <text x={s.x + 49} y={51} textAnchor="middle" fontSize={10.5} fontWeight={600} className={`${s.warn ? "fill-discharge" : "fill-brand"} font-mono`}>
+            {s.label}
+          </text>
+          <text x={s.x + 49} y={66} textAnchor="middle" fontSize={9} className={`${s.warn ? "fill-discharge" : "fill-text-secondary"} font-mono`}>
+            {s.sub}
+          </text>
+        </g>
+      ))}
+
+      {/* The race: the same 500 LightGBM models, on the box's CPU and on its GPU. */}
+      <text x={16} y={116} fontSize={10} className="fill-brand font-mono">
+        train 500 models · same box, same data
+      </text>
+      {[
+        { y: 130, name: "CPU", sub: "6 vCPU", bar: "race-cpu", tag: "race-tag-cpu", time: "28.0 s" },
+        { y: 178, name: "GPU", sub: "A16 · 16 GB", bar: "race-gpu", tag: "race-tag-gpu", time: "17.4 s" },
+      ].map((lane) => (
+        <g key={lane.name}>
+          <text x={16} y={lane.y + 17} fontSize={12} fontWeight={600} className="fill-foreground font-sans">
+            {lane.name}
+          </text>
+          <text x={16} y={lane.y + 31} fontSize={9} className="fill-text-secondary font-mono">
+            {lane.sub}
+          </text>
+          <rect x={96} y={lane.y + 4} width={300} height={24} rx={6} className="fill-surface stroke-border" />
+          <rect x={96} y={lane.y + 4} width={300} height={24} rx={6} className={`${lane.bar} fill-brand`} />
+          <text x={404} y={lane.y + 20} fontSize={11} fontWeight={600} className={`${lane.tag} fill-brand font-mono`}>
+            {lane.time}
+          </text>
+        </g>
+      ))}
+      <g className="verdict-in">
+        <rect x={16} y={226} width={448} height={56} rx={8} className="fill-brand-tint stroke-brand" />
+        <text x={32} y={248} fontSize={13} fontWeight={700} className="fill-brand font-serif">
+          1.6× faster, same forecasts.
+        </text>
+        <text x={32} y={267} fontSize={9.5} className="fill-brand font-mono">
+          trees on tabular data don&apos;t need a GPU → the live system stays CPU-only
+        </text>
+      </g>
+      <text x={16} y={296} fontSize={10} className="fill-text-secondary font-mono">
+        three A16 boxes · about 29 box-minutes · $1.44 · deleted when idle
+      </text>
+    </svg>
+  );
+}

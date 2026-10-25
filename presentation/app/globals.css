@@ -235,6 +235,92 @@ body {
   }
 }
 
+/* GPU diagram: the CPU and the A16 train the same 500 models. Both start together; the GPU bar fills in 62% of the
+   CPU's time (17.4 s against 28.0 s), each time appears as its bar completes, then the verdict. 8 s loop. */
+
+.race-cpu,
+.race-gpu {
+  transform-box: fill-box;
+  transform-origin: left;
+}
+
+.race-cpu {
+  animation: race-cpu 8s linear infinite;
+}
+
+.race-gpu {
+  animation: race-gpu 8s linear infinite;
+}
+
+@keyframes race-cpu {
+  0%,
+  6% {
+    transform: scaleX(0);
+  }
+  71%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes race-gpu {
+  0%,
+  6% {
+    transform: scaleX(0);
+  }
+  46%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+.race-tag-cpu {
+  animation: race-tag-cpu 8s linear infinite;
+}
+
+.race-tag-gpu {
+  animation: race-tag-gpu 8s linear infinite;
+}
+
+@keyframes race-tag-cpu {
+  0%,
+  70% {
+    opacity: 0;
+  }
+  73%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes race-tag-gpu {
+  0%,
+  45% {
+    opacity: 0;
+  }
+  48%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.verdict-in {
+  animation: verdict-in 8s ease-out infinite;
+}
+
+@keyframes verdict-in {
+  0%,
+  74% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  82%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Hero background: fade the grid out behind the headline, run pulses of current along the traces. */
 
 .hero-fade {
@@ -273,7 +359,12 @@ body {
   .lane,
   .draw,
   .band-in,
-  .grow-y {
+  .grow-y,
+  .race-cpu,
+  .race-gpu,
+  .race-tag-cpu,
+  .race-tag-gpu,
+  .verdict-in {
     animation: none;
   }
 }
