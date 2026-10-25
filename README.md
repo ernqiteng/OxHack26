@@ -20,20 +20,6 @@ A battery trading system for the GB electricity market. Tempo forecasts half-hou
 
 ---
 
-## Contents
-
-1. [What Tempo is](#1-what-tempo-is)
-2. [Results](#2-results)
-3. [How it works](#3-how-it-works)
-4. [How Tempo fits the tracks](#4-how-tempo-fits-the-tracks)
-5. [Challenges we hit](#5-challenges-we-hit)
-6. [Known limits and what's next](#6-known-limits-and-whats-next)
-7. [Architecture and tech stack](#7-architecture-and-tech-stack)
-8. [Repo map](#8-repo-map)
-9. [Run it yourself](#9-run-it-yourself)
-
----
-
 ## 1. What Tempo is
 
 ### The market
@@ -63,7 +49,37 @@ Most prediction projects stop at an accuracy number. Tempo turns the prediction 
 
 ---
 
-## 2. Results
+## 2. Key features
+
+### Live decision engine
+- **Point-in-time ingest:** six Elexon datasets (2-year backfill + live poller) flow into Tiger Data hypertables. Every row is stamped with `available_at`, so a decision only ever uses data that existed at the time. A leak test deletes each point-in-time filter in turn and requires the suite to fail.
+- **Quantile forecast:** three LightGBM models predict the next 48 half-hourly prices as a p10 / p50 / p90 band, after beating a persistence baseline.
+- **Cost-gated optimiser:** trades only when the spread beats the 10% round-trip loss plus battery wear; otherwise it **holds** and logs why. Greedy runs live, with a `cvxpy` linear program as an alternative.
+- **Runs every 30 minutes** on a Vultr box in London, writing 48 decisions per batch, each with a written reason.
+
+### Timing audit (the signature feature)
+- Click any decision: Tempo takes one **Tiger zero-copy fork** of the live database (~35 s), and **five pre-warmed Vultr workers** replay it from 1 h early to 1 h late in parallel, showing in pounds what mistiming would have cost.
+- **Self-grade:** every completed cycle is scored; 87.5% were within one settlement period of the best timing.
+
+### Honesty and proof
+- **Walk-forward backtest** on 100 unseen weeks: **66.4% of perfect foresight**, 2× a fixed-hours rule, and no losing weeks.
+- **Weak spots shown openly:** calibration of the uncertainty band (overconfident), the calm-vs-windy breakdown, and where persistence comes close.
+- **Band recalibration:** conformal recalibration is built and tested (78.9% coverage in the backtest), not live yet.
+
+### Infrastructure
+- **Tiger Data:** hypertables, continuous aggregates (half-hourly → daily → weekly), compression to fit the 750 MB free tier, and zero-copy forks.
+- **Vultr:** a snapshot-built worker fleet, a lease-based scheduler, bearer-token-secured FastAPI workers, and one-command deploy scripts.
+- **Go/no-go check:** `demo_reset.py` checks Tiger, forks, prices, decisions and workers before every demo, and picks the decision to click.
+
+### Front ends
+- **Presentation website** (`/`): click-to-start intro, About, How it works, Tiger Data and Vultr pages, with animated diagrams.
+- **Pitch dashboard** (`/app/`): six presenter-driven chapters with real data and the live timing audit.
+- **Streamlit dashboard** (`:8501`) and a **JSON API** (`/api/`).
+
+### Quality
+- **493 automated tests**, all passing: 346 unit and contract tests, and 147 database tests.
+
+## 3. Results
 
 Walk-forward backtest over **100 unseen weeks** (24 Oct 2024 to 24 Oct 2026, run `db-20261024T202144Z`): 28 days of training, retrained for every 7-day test week, each week scored against perfect foresight on that same week.
 
@@ -90,7 +106,7 @@ One Tiger fork, five Vultr workers, 32 seconds, equal to the in-process replay t
 
 ---
 
-## 3. How it works
+## 4. How it works
 
 ```
 Elexon Insights API  (6 datasets: MID prices, WINDFOR, NDF, INDO, FUELHH, DISEBSP)
@@ -119,34 +135,34 @@ dashboards                       timing audit (on click)
                                  side-by-side £ comparison, fork deleted
 ```
 
-### 3.1 Ingest: Elexon → Tiger Data ([`tempo/ingest/`](tempo/ingest/))
+### 4.1 Ingest: Elexon → Tiger Data ([`tempo/ingest/`](tempo/ingest/))
 
 - Source: the free **Elexon Insights API**, the official GB balancing and settlement feed.
 - Six datasets: APX Market Index Data (MID) prices, wind forecast (WINDFOR), national demand forecast (NDF), outturn demand (INDO), generation by fuel (FUELHH) and system prices (DISEBSP). 3.3 million rows over two years.
 - A two-year **backfill** loads history through Elexon's stream endpoints. A **metadata-driven poller** checks `/datasets/metadata/latest` every minute and refetches only the datasets that moved.
 - **Point-in-time stamping starts here.** Every row stores `available_at`: Elexon's publish time where it has one, or period end + 30 min + a stated 10-minute delay for MID, which has none. Rows are keyed on the API's UTC `startTime`, so clock-change days (46 or 50 periods) need no special case.
 
-### 3.2 Features with no lookahead ([`tempo/features/build.py`](tempo/features/build.py))
+### 4.2 Features with no lookahead ([`tempo/features/build.py`](tempo/features/build.py))
 
 - `build_features(conn, decision_time)` uses only data with `available_at ≤ decision_time`. A wind forecast published one minute after the decision can't be used.
 - 17 features: price lags (same period yesterday and last week), daily and weekly spreads and volatility from the continuous aggregates, wind and demand forecasts (forward-filled, never interpolated, because interpolating would need a forecast that may not be published yet), and UK-local calendar features.
 - Every point-in-time filter is one SQL line ending in `-- pit`. [`tests/contracts/test_pit_leak.py`](tests/contracts/test_pit_leak.py) deletes each one in turn, and the suite must fail every time.
 
-### 3.3 Quantile forecast ([`tempo/forecast/lgbm.py`](tempo/forecast/lgbm.py))
+### 4.3 Quantile forecast ([`tempo/forecast/lgbm.py`](tempo/forecast/lgbm.py))
 
 - Three LightGBM regressors with `objective='quantile'` (α = 0.1, 0.5, 0.9) predict each of the next 48 half-hours. Outputs are sorted per row so p10 ≤ p50 ≤ p90 always holds.
 - Model ladder, simplest first: **persistence** (same price as yesterday) is the baseline LightGBM had to beat, and it did, by 28%.
 - It learned the physics on its own: the national demand forecast and wind share of demand are its two biggest features.
 - Training is deterministic and takes about 90 seconds on a laptop CPU. We tested a Vultr NVIDIA A16: 1.6× faster, no better forecasts, so the live system stays CPU-only.
 
-### 3.4 Cost-gated decision ([`tempo/optimise/`](tempo/optimise/), [`tempo/sim/battery.py`](tempo/sim/battery.py))
+### 4.4 Cost-gated decision ([`tempo/optimise/`](tempo/optimise/), [`tempo/sim/battery.py`](tempo/sim/battery.py))
 
 - **Battery:** 2 MWh capacity, 1 MW power, 90% round-trip efficiency, £20 wear per full cycle. `simulate()` is the single source of truth for physics and P&L.
 - **Cost gate:** a buy/sell pair is traded only if `eff·sell − buy > eff·wear per MWh`, the exact condition under which `simulate()` shows a profit. Otherwise Tempo **holds** and logs why. A real example it refused: an £18.75 spread, minus £13.82 of efficiency loss and £9.00 of wear, is −£4.07, so it held.
 - **Greedy optimiser (live):** repeatedly pairs the cheapest buy period with the dearest later sell period and moves as much energy as the battery allows.
 - **LP optimiser:** a `cvxpy` linear program over all 48 periods with state-of-charge, power, efficiency and wear constraints. It beat greedy by two points over 100 weeks; not enough to swap the live system the night before the demo, so it sits on the honesty table and is one flag away (`--optimiser lp`).
 
-### 3.5 Timing audit ([`tempo/audit/`](tempo/audit/), [`tempo/worker/main.py`](tempo/worker/main.py))
+### 4.5 Timing audit ([`tempo/audit/`](tempo/audit/), [`tempo/worker/main.py`](tempo/worker/main.py))
 
 1. **Click a decision.**
 2. Tempo takes **one Tiger Data zero-copy fork** of the live database: a writable copy, frozen at the click.
@@ -156,20 +172,20 @@ dashboards                       timing audit (on click)
 
 A **self-grade** ([`tempo/audit/selfgrade.py`](tempo/audit/selfgrade.py)) runs the same shift analysis on every completed cycle and reports how often Tempo's timing was within one period of the best shift.
 
-### 3.6 Honesty and walk-forward backtest ([`tempo/backtest/`](tempo/backtest/))
+### 4.6 Honesty and walk-forward backtest ([`tempo/backtest/`](tempo/backtest/))
 
 - Test weeks tile the range, each preceded by its own training window, never overlapping. Every week starts from a fresh battery.
 - Strategies only see test-week prices that were already published at decision time. Perfect foresight is the only strategy allowed to see them all.
 - The honesty panel shows the results table, calibration of the p10–p90 band, the calm-vs-windy breakdown and plain statements of where Tempo is weak, including the ones that don't flatter it.
 
-### 3.7 What you see
+### 4.7 What you see
 
 - **[Presentation website](http://136.244.77.120/):** the pipeline, Tiger Data and Vultr explained with animated diagrams.
 - **[Pitch dashboard](http://136.244.77.120/app/):** six full-screen chapters driven with the arrow keys. **Hook** (one real day of prices), **Data** (a draggable timeline showing what a decision could and couldn't see), **Prediction** (the live forecast against what happened), **Decision** (every half-hour's reason, and what-if sliders running the real optimiser), **Proof** (all 100 weeks and a replayed windy week) and **Timing** (a live fork audit). Every number is read from Tiger, not drawn by hand.
 
 ---
 
-## 4. How Tempo fits the tracks
+## 5. How Tempo fits the tracks
 
 ### HRT: Best Use of Data for Predictions and Decision Making
 
@@ -201,16 +217,26 @@ Grid data in, a proven decision out, every 30 minutes. HRT separates a model tha
 
 ### Best Use of Tiger Data
 
-Tiger Data is Tempo's only database, and both the feature pipeline and the signature mechanic depend on it.
+Tiger Data is Tempo's only database, and both the feature pipeline and the signature mechanic depend on it. Market data, forecasts, decisions, replays and audit results all live in one Tiger service, built on PostgreSQL with TimescaleDB, so every layer of Tempo reads and writes the same source of truth.
 
 | Feature | How Tempo uses it |
 |---|---|
-| Hypertables | `grid_raw` (two years of Elexon data plus every new half-hour), `forecasts` and `decisions` (48 rows every half hour), audit results |
-| Continuous aggregates | Half-hourly → daily → weekly prices, each built on the level below. They feed the model's features and the charts, and update themselves as new prices land |
+| Hypertables | `grid_raw` (two years of Elexon data plus every new half-hour), `forecasts` and `decisions` (48 rows every half hour), `battery_state` and `audits`. Tables are split into chunks by time, so "give me last week" reads only last week's chunk |
+| Continuous aggregates | Half-hourly → daily → weekly prices, each built on the level below. They feed the model's features and the charts, and update themselves as new prices land: half-hourly every 5 minutes, daily every 30 minutes, weekly every hour |
 | Compression | 3.3 million rows, 78% compressed, inside the 750 MB free tier. The two-year price query executes in 19 ms |
 | Zero-copy forks | The engine of the timing audit: a writable copy of the live database, frozen at the click, that five replays can write into without touching live |
 
-**Why the fork is load-bearing.** The five what-if timelines each need to *write* their own battery state and P&L, not just read the past, against data frozen at the moment of the click. A fork gives exactly that. On a free service it is copy-on-write and ready in 36–42 seconds; a standard fork takes 5–20 minutes, too slow for a live click.
+**Every row knows when it became available.** Each row in `grid_raw` stores `available_at`, the moment Tempo could first have seen it: Elexon's publish time where there is one, or a stated delay for the price series, which has none. Feature queries filter on `available_at ≤ decision_time`, so a forecast published one minute after a decision can never reach it. Every one of those filters is tagged in the SQL, and a test deletes each in turn and requires the suite to fail.
+
+**Aggregates do the heavy lifting.** The model's price features (yesterday's spread, last week's mean and volatility) and the dashboard's two-year chart read the continuous aggregates instead of scanning raw rows. A half-hour, day or week only counts once all of its prices have been published, so the aggregates obey the same no-lookahead rule as the raw data. A test checks the aggregates against the same calculation done in pandas.
+
+**Fitting two years into a free tier.** The free service caps storage at 750 MB, and an empty database already reported about 340 MB used. Our first backfill compressed only after each whole dataset, which would have pushed the database past the cap and made it read-only, so we paused, changed the loader to compress after every window, and resumed from its log the same evening. A 7-day compression policy keeps new data compressed automatically, and a test proves compressed chunks return exactly the same rows as uncompressed ones.
+
+**Why the fork is load-bearing.** The five what-if timelines each need to *write* their own battery state and P&L, not just read the past, against data frozen at the moment of the click. A fork gives exactly that. On a free service it is copy-on-write and ready in 36–42 seconds; a standard fork takes 5–20 minutes, too slow for a live click. Only the blocks the replays change are copied, and the fork is deleted afterwards, keeping only the audit results.
+
+**One fork, not five.** We designed the audit as one fork per timeline, but a free Tiger project holds only two services at once: the live database plus one fork. So Tempo takes one fork per click, and all five timelines replay inside it under their own run ids, isolated from each other and from live. A test proves the fork replay matches the in-process replay to the penny, and the five-fork layout is still in the code behind one setting for an account with a higher limit. Before every demo, `demo_reset.py` confirms the primary is ready, deletes any stale forks and checks that the slot is free.
+
+Take Tiger Data away and both the feature pipeline and the timing audit go with it.
 
 ### Best Use of Vultr
 
@@ -243,7 +269,7 @@ Tiger supplies the data forks; Vultr supplies the machines that replay against t
 
 ---
 
-## 5. Challenges we hit
+## 6. Challenges we hit
 
 - **Five forks became one.** We designed one zero-copy fork per timeline. On real Tiger, the third fork was refused with `403 ENTITLEMENT_ERROR`: a free project holds only two services, and paid forks take minutes. Tempo now takes one fork per click with all five timelines under separate run ids, and a test proves the result is identical to the penny in both layouts.
 - **A 750 MB database that was already half full.** An empty free-tier database already reported 339 MB used. Mid-backfill we paused with 1.4 million rows to go, changed the loader to compress after every window instead of every dataset, and resumed the same evening. All six datasets now take about 65 MB.
@@ -253,7 +279,7 @@ Tiger supplies the data forks; Vultr supplies the machines that replay against t
 
 ---
 
-## 6. Known limits and what's next
+## 7. Known limits and what's next
 
 | Limit | Next step |
 |---|---|
@@ -267,7 +293,7 @@ Tempo assumes the battery can trade at the APX Market Index price each period. S
 
 ---
 
-## 7. Architecture and tech stack
+## 8. Architecture and tech stack
 
 ```
                        Elexon Insights API
@@ -298,7 +324,7 @@ Tempo assumes the battery can trade at the APX Market Index price each period. S
 
 ---
 
-## 8. Repo map
+## 9. Repo map
 
 ```
 tempo/            the Python package
@@ -318,18 +344,4 @@ presentation/     the presentation website
 pitch/            the pitch dashboard
 deploy/           systemd units, nginx config, bootstrap
 docs/             design notes, plans and the demo script
-```
-
----
-
-## 9. Run it yourself
-
-The live system needs Tiger Data and Vultr credentials, but the tests and both websites run locally.
-
-```bash
-make setup                                  # venv and dependencies
-make test                                   # unit + contract tests, no network, no DB
-
-cd presentation && npm install && npm run dev            # http://localhost:3000
-cd pitch && npm install && npm run dev -- -p 3001        # http://localhost:3001
 ```
