@@ -1,22 +1,24 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Libre_Baskerville } from "next/font/google";
+import localFont from "next/font/local";
 import { Nav } from "@/components/Nav";
 import { Progress } from "@/components/Progress";
 import "./globals.css";
 
-const serif = Libre_Baskerville({
-  subsets: ["latin"],
-  weight: ["400", "700"],
+// Bundled (latin subset, from Google Fonts, OFL) so a build never depends on fetching fonts: next/font/google
+// failed intermittently. Baskerville and Plex Sans are variable fonts; Plex Mono is two static weights.
+const serif = localFont({
+  src: [{ path: "./fonts/libre-baskerville.woff2", weight: "400 700" }],
   variable: "--font-baskerville",
 });
-const sans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const sans = localFont({
+  src: [{ path: "./fonts/ibm-plex-sans.woff2", weight: "400 600" }],
   variable: "--font-plex-sans",
 });
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const mono = localFont({
+  src: [
+    { path: "./fonts/ibm-plex-mono-400.woff2", weight: "400" },
+    { path: "./fonts/ibm-plex-mono-500.woff2", weight: "500" },
+  ],
   variable: "--font-plex-mono",
 });
 
