@@ -235,6 +235,65 @@ def audit(decision_id: int) -> dict:
     }
 
 
+# Fork audits run in a background thread (tempo.dashboard.jobs.AuditJob); the pitch site polls their progress.
+# The free tier has one fork slot, so only one may run at a time.
+_JOBS: dict[int, object] = {}
+_JOB_ACTIONS: dict[int, str] = {}
+
+
+def _fork_status(decision_id: int, job) -> dict:
+    states, events = job.progress.snapshot()
+    out = {
+        "decision_id": decision_id,
+        "done": bool(job.done),
+        "error": job.error,
+        "running_s": round(job.running_s, 1),
+        "states": {str(k): v for k, v in states.items()},
+        "workers": {str(k): v for k, v in job.progress.workers.items()},
+        "log": [
+            {"t": round(e.elapsed_s, 1), "shift": e.shift, "state": e.state, "message": e.message}
+            for e in events[-30:]
+        ],
+        "note": getattr(job, "note", None),
+        "rows": [],
+        "sentence": None,
+    }
+    if job.done and job.rows is not None and not job.rows.empty:
+        rows = job.rows.sort_values("shift")
+        cols = ["shift", "pnl_gbp", "pnl_delta_gbp", "mode", "worker_id", "fork_service_id"]
+        out["rows"] = records(rows, cols)
+        for r in out["rows"]:
+            r["label"] = SHIFT_LABELS.get(r["shift"], str(r["shift"]))
+        action = _JOB_ACTIONS.get(decision_id)
+        out["sentence"] = hero_sentence(rows, action)
+    return out
+
+
+
+@app.post("/api/decisions/{decision_id}/fork-audit")
+def start_fork_audit(decision_id: int) -> dict:
+    """Start the real timing audit: one Tiger fork, five shifts replayed on the Vultr workers."""
+    src, _ = source()
+    running = [k for k, j in _JOBS.items() if not j.done]
+    if running:
+        if running[0] == decision_id:
+            return _fork_status(decision_id, _JOBS[decision_id])
+        raise HTTPException(409, f"an audit for decision {running[0]} is still running (one fork slot)")
+    with _LOCK:
+        d = _decision(src, decision_id)
+        _JOB_ACTIONS[decision_id] = d.action
+        _JOBS[decision_id] = src.start_fork_audit(decision_id)
+    return _fork_status(decision_id, _JOBS[decision_id])
+
+
+@app.get("/api/decisions/{decision_id}/fork-audit")
+def fork_audit_status(decision_id: int) -> dict:
+    job = _JOBS.get(decision_id)
+    if job is None:
+        raise HTTPException(404, f"no fork audit started for decision {decision_id}")
+    return _fork_status(decision_id, job)
+
+
 @app.get("/api/replay")
 def replay() -> dict:
     src, _ = source()

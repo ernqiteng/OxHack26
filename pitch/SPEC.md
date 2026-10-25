@@ -53,7 +53,7 @@ Version A, three steps. "Where it's weak" (calibration, regime gap) is not on th
 - Step 3, replay: ▶ Play button with a 1×/4× switch. Windy week from 11 Jun 2026 (models/replay_week.*, median windy week, 62.9% of perfect). The price line runs, the battery charges and sells, and £ ticks up to £611 with perfect's total as the target.
 - Inputs: Play and speed only.
 
-## 05 · Timing: "Did it pick the right moment?" (agreed)
+## 05 · Timing: "Did it pick the right moment?" (agreed, built, awaiting confirmation)
 
 Version A, four steps. Bars for the verdict, not stacked timelines.
 

@@ -503,12 +503,80 @@ def proof(conn) -> dict:
     }
 
 
+TIMING_DECISION = 1353  # the 11:30 charge in the 23 Oct 07:00 plan (chapter 03); demo_reset may pick another
+SHIFT_LABELS = {-2: "1 h earlier", -1: "30 min earlier", 0: "as decided", 1: "30 min later", 2: "1 h later"}
+
+
+def timing(conn) -> dict:
+    from datetime import UTC
+
+    from tempo.audit.selfgrade import self_grade
+
+    decided, target, action, mw, reason = conn.execute(
+        "SELECT decided_at, target_time, action, mw, reason FROM decisions WHERE decision_id = %s",
+        (TIMING_DECISION,),
+    ).fetchone()
+    batch = conn.execute(
+        "SELECT f.target_time, f.p50 FROM forecasts f WHERE f.run_id = 'live' AND f.decided_at = %s",
+        (decided,),
+    ).fetchall()
+    local = {t.astimezone(UTC).strftime("%H:%M"): t.astimezone(LONDON).strftime("%H:%M") for t, _ in batch}
+    p50 = {t.astimezone(LONDON).strftime("%H:%M"): float(v) for t, v in batch}
+
+    started = conn.execute(
+        "SELECT max(started_at) FROM audits WHERE decision_id = %s AND mode = 'fork'", (TIMING_DECISION,)
+    ).fetchone()[0]
+    rows = conn.execute(
+        """SELECT shift, pnl_gbp, pnl_delta_gbp, worker_id, fork_service_id, started_at, finished_at
+           FROM audits
+           WHERE decision_id = %s AND mode = 'fork' AND started_at >= %s - interval '2 minutes'
+           ORDER BY shift""",
+        (TIMING_DECISION, started),
+    ).fetchall()
+    if len(rows) != 5 or any(r[1] is None for r in rows):
+        raise SystemExit(f"decision {TIMING_DECISION}: the last fork audit is incomplete ({len(rows)} rows)")
+    grade = self_grade(conn, since=datetime.now(UTC) - timedelta(days=30))
+    return {
+        "decision": {
+            "id": TIMING_DECISION,
+            "decided_at": decided.astimezone(LONDON).strftime("%a %d %b %H:%M"),
+            "target": target.astimezone(LONDON).strftime("%H:%M"),
+            "day": target.astimezone(LONDON).strftime("%a %d %b"),
+            "action": action,
+            "mw": round(mw, 2),
+            "why": _plain_reason(reason, local, p50, 0.9),
+        },
+        "recorded": {
+            "started_at": started.astimezone(LONDON).strftime("%a %d %b %H:%M"),
+            "elapsed_s": round((max(r[6] for r in rows) - min(r[5] for r in rows)).total_seconds(), 1),
+            "rows": [
+                {
+                    "shift": sh,
+                    "label": SHIFT_LABELS[sh],
+                    "pnl_gbp": round(pnl, 2),
+                    "pnl_delta_gbp": round(d, 2),
+                    "worker_id": w,
+                    "forked": f is not None,
+                }
+                for sh, pnl, d, w, f, *_ in rows
+            ],
+        },
+        "self_grade": {
+            "n_cycles": grade["n_cycles"],
+            "within_one": round(grade["pct_within_one_period"] * grade["n_cycles"]),
+            "pct_within_one": round(100 * grade["pct_within_one_period"], 1),
+            "mean_cost_gbp": round(grade["mean_cost_of_mistiming_gbp"], 2),
+        },
+    }
+
+
 CHAPTERS = {
     "hook": hook,
     "data": data,
     "prediction": prediction,
     "decision": decision,
     "proof": proof,
+    "timing": timing,
 }
 
 
