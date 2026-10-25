@@ -31,7 +31,8 @@ from tempo.dashboard.jobs import hero_sentence
 app = FastAPI(title="Tempo API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    # 3000: web/ (old frontend). 3001: pitch/ (dev server and `npm start`).
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

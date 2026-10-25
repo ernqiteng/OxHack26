@@ -2,7 +2,7 @@
 
 What each chapter shows, agreed one at a time with Ayo before building. The presenter drives the demo; judges watch. Inputs only where they earn their place.
 
-## 00 · Hook: "Why this is hard" (agreed)
+## 00 · Hook: "Why this is hard" (agreed, built, awaiting confirmation)
 
 One real day of GB prices, revealed in five steps. The presenter presses → to advance each step.
 
