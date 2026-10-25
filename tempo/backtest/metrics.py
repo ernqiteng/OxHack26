@@ -24,6 +24,8 @@ LABELS = {
     "tempo": "Tempo (LightGBM forecast + same optimiser)",
     "tempo_lp": "Tempo (LightGBM forecast + LP optimiser)",
     "perfect": "Perfect knowledge of the future",
+    "tempo_lp_safe": "Tempo (LP, conservative: buy at p90, sell at p10)",
+    "tempo_lp_safe_cal": "Tempo (LP, conservative, recalibrated band)",
 }
 
 

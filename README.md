@@ -367,7 +367,8 @@ scripts/
   poll.py                 live poller
   train.py                train the quantile models into models/
   decide.py               live decider, one batch every half hour
-  backtest.py             walk-forward backtest
+  backtest.py             walk-forward backtest (--calibration: the band raw vs recalibrated)
+  calibration_report.py   recalibration replayed on the stored live forecasts (read-only)
   replay_week.py          pick and export the replay week for the dashboard
   demo_reset.py           go/no-go check before a demo
   build_worker_image.py   build and snapshot the Vultr worker image
@@ -522,7 +523,7 @@ Demo-day rules that follow from the Tiger free tier's two-service limit:
 ## Challenges and known limits
 
 - **Five forks became one.** We designed one zero-copy fork per timeline. On real Tiger, the third service was refused with `403 ENTITLEMENT_ERROR`: a free project holds two services at once, and paid forks take minutes. Tempo now takes one fork per click, and all five timelines replay inside it under separate run ids. A test shows the fork replay equals the in-process replay to the penny in both layouts. `TEMPO_AUDIT_FORKS=per_shift` brings back five forks on an account with a higher limit.
-- **The uncertainty band is overconfident.** The p10–p90 band should hold about 80% of real prices. On 405 settled live forecasts it holds 40%. Trades use p50 only, so the band never changes a decision, and the dashboard says so.
+- **The uncertainty band is overconfident.** The p10–p90 band should hold about 80% of real prices. On 405 settled live forecasts it holds 40%, and 63% on the 1,344-row training holdout. Trades use p50 only, so the band never changes a decision, and the dashboard says so.
 - **Regime breakdown didn't go as expected.** We expected forecasting to matter more in windy weeks. Tempo's lead over persistence is 16 points on calm weeks and 12 on windy ones, and the panel shows it.
 - **Price assumption.** Tempo trades at the APX Market Index price for each period. System price publishes about 24 hours late, and N2EX has frequent zero-volume rows.
 - **Not built:** parallel walk-forward backtests on the Vultr workers and a battery-size sweep ([docs/time.md](docs/time.md)).
@@ -533,7 +534,7 @@ Demo-day rules that follow from the Tiger free tier's two-service limit:
 
 The fixes we'd make next, for the limits above.
 
-- **Recalibrate the band.** Conformal adjustment on recent residuals, so p10–p90 really holds about 80% of prices. Then the LP's conservative mode (buy at p90, sell at p10) can use it.
+- **Recalibrate the band: built and tested, not live yet.** [`tempo/forecast/calibrate.py`](tempo/forecast/calibrate.py) widens p10 and p90 by the 80% quantile of the previous week's settled misses (conformal). p50 never moves, so decisions don't change. On the 100-week walk-forward (`scripts/backtest.py --source db --calibration`, printed, never written) the band holds **78.9%** of 33,481 unseen half-hours, up from 43.9%, and 74 of 100 weeks land within 70–90% (raw: 0). The cost is a band about twice as wide (£53 against £25/MWh). Trading on the band doesn't pay: the LP's conservative mode (buy at p90, sell at p10) makes 48.7% of perfect on the raw band and 25.6% on the recalibrated one, against 68.3% on p50. So the band stays a risk display, and p50 keeps making the trades. On live forecasts so far (35 batches, 3 days) `scripts/calibration_report.py` takes it from 32% to 49–69%. That's too little history to trust yet.
 - **Better wind and demand features.** The model should help most in windy weeks and doesn't yet. Actual demand (INDO) and the generation mix (FUELHH) are already stored in Tiger but not used by the model.
 - **Room to the ceiling.** Tempo captures 66.4% of perfect foresight (worst week 31.2%). The LP optimiser reaches 68.3% and is one flag away (`scripts/decide.py --optimiser lp`).
 - **Reason strings in UK time.** `greedy.py` prints the times inside its reasons in UTC; the pitch site converts them, the API and Streamlit show them as stored.
