@@ -1,12 +1,14 @@
-"""Streamlit app: the Tempo dashboard as one "Report" page (docs/ui-plan.md 4.1, docs/ui.md 5).
+"""Streamlit app: the Tempo dashboard as one "Report" page.
 
 Owner: Ayo. See docs/ayo.md. Run with `make dashboard` or `streamlit run tempo/dashboard/app.py`.
 
-Sections in demo order, each opened by an eyebrow and a serif sentence built from real numbers: Live, Replay,
-Timing audit, Honesty, About. With TEMPO_DATABASE_URL set every section reads `DbSource`; a query that hits a
-missing or empty table falls back to synthetic data and says so in a note under that section. The Timing
-audit button takes a Tiger fork and replays on the Vultr pool in a background job (fork mode), or replays
-in-process (the on-stage fallback).
+Sections in demo order, each opened by a gradient eyebrow and a sentence built from real numbers: Live,
+Replay, Timing audit, Honesty, About. The Live section is laid out like a live grid monitor: stat cards on
+top, then coloured banner panels either side of a donut of today's 48-period schedule. With
+TEMPO_DATABASE_URL set every section reads `DbSource`; a query that hits a missing or empty table falls
+back to synthetic data and says so in a note under that section. The Timing audit button takes a Tiger fork
+and replays on the Vultr pool in a background job (fork mode), or replays in-process (the on-stage
+fallback).
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ SECTIONS = [
     ("honesty", "Honesty"),
     ("about", "About"),
 ]
+GRAD_GOOD = f"linear-gradient(100deg, {T.GOOD} 0%, #4cc38a 100%)"
 
 
 @st.cache_resource
@@ -82,6 +85,10 @@ def main_strategy_row(summary: pd.DataFrame):
     return (tempo if not tempo.empty else rows.sort_values("pct_of_perfect")).iloc[-1]
 
 
+def hhmm(ts) -> str:
+    return f"{T.local_naive(ts):%H:%M}"
+
+
 # ---------------------------------------------------------------------------------------------
 # Header strip
 # ---------------------------------------------------------------------------------------------
@@ -92,14 +99,20 @@ def header_strip() -> None:
     src, note = get_source()
     midnight, period = current_settlement_period()
     now_local = T.local_naive(datetime.now(tz=UTC))
-    left, right = st.columns([3, 2])
-    with left:
+    with st.container(key="hero"):
+        st.html(
+            '<div class="tp-byline">A project for <b>OxHack 2026</b> · theme TIME'
+            '<span class="tp-chip">HRT track</span></div>'
+        )
         st.title("Tempo")
+        st.html(
+            '<div class="tp-tagline"><span class="tp-live"></span><b>Live</b> · when a grid battery should '
+            "charge, sell or hold on the GB half-hourly market, and proof it picked the right moment</div>"
+        )
         st.caption(
             f"{midnight:%A %d %B %Y} · settlement period {period} · {now_local:%H:%M} UK · "
             + " · ".join(f"[{label}](#{anchor})" for anchor, label in SECTIONS)
         )
-    with right:
         summary = src.backtest_summary()
         main = main_strategy_row(summary)
         if main is not None:
@@ -128,6 +141,113 @@ def header_strip() -> None:
 # ---------------------------------------------------------------------------------------------
 
 
+def action_blocks(sched: pd.DataFrame, fc: pd.DataFrame) -> list[dict]:
+    """Left banner panel: one banner per action with its share of the 48 periods, energy and prices."""
+    try:
+        merged = sched.merge(fc[["target_time", "p50"]], on="target_time", how="left")
+    except (KeyError, ValueError, TypeError):
+        merged = sched.assign(p50=float("nan"))
+    n = max(len(merged), 1)
+    blocks = []
+    spec = [
+        ("charge", T.GRAD_CHARGE, "Charge", "energy bought", "first charge"),
+        ("discharge", T.GRAD_SELL, "Sell", "energy sold", "first sale"),
+    ]
+    for action, grad, name, energy, first_label in spec:
+        part = merged[merged.action == action]
+        colour = T.ACTION_COLOUR[action]
+        avg = part.p50.mean() if len(part) else None
+        blocks.append(
+            {
+                "grad": grad,
+                "value": (f"{len(part)}", " periods"),
+                "share": (f"{100 * len(part) / n:.1f}", "%"),
+                "name": name,
+                "rows": [
+                    {"colour": colour, "value": (f"{part.mw.abs().sum() * 0.5:.1f}", "MWh"), "name": energy},
+                    {
+                        "colour": colour + "99",
+                        "value": (ui.gbp(avg) if avg is not None and not pd.isna(avg) else "—", "/MWh"),
+                        "name": "avg forecast price",
+                    },
+                    {
+                        "colour": colour + "55",
+                        "value": (hhmm(part.target_time.iloc[0]) if len(part) else "—", ""),
+                        "name": first_label,
+                    },
+                ],
+            }
+        )
+    holds = merged[merged.action == "hold"]
+    spread = holds.expected_spread.mean() if len(holds) else None
+    blocks.append(
+        {
+            "grad": T.GRAD_HOLD,
+            "value": (f"{len(holds)}", " periods"),
+            "share": (f"{100 * len(holds) / n:.1f}", "%"),
+            "name": "Hold",
+            "rows": [
+                {
+                    "colour": T.HOLD,
+                    "value": (ui.gbp(spread) if spread is not None and not pd.isna(spread) else "—", "/MWh"),
+                    "name": "avg expected spread",
+                },
+                {
+                    "colour": T.HOLD + "77",
+                    "value": (hhmm(holds.target_time.iloc[0]) if len(holds) else "—", ""),
+                    "name": "first hold",
+                },
+            ],
+        }
+    )
+    return blocks
+
+
+def market_blocks(prices: pd.DataFrame, fc: pd.DataFrame) -> list[dict]:
+    """Right banner panel: the forecast for the next 24 h and the market over the last 24 h."""
+    blocks = []
+    if not fc.empty:
+        lo, hi = fc.loc[fc.p50.idxmin()], fc.loc[fc.p50.idxmax()]
+        blocks.append(
+            {
+                "grad": T.GRAD_FORECAST,
+                "value": (ui.gbp(fc.p50.mean()), "/MWh"),
+                "name": "Forecast, next 24 h",
+                "rows": [
+                    {
+                        "colour": T.CHARGE,
+                        "value": (ui.gbp(lo.p50), "/MWh"),
+                        "name": f"cheapest at {hhmm(lo.target_time)}",
+                    },
+                    {
+                        "colour": T.DISCHARGE,
+                        "value": (ui.gbp(hi.p50), "/MWh"),
+                        "name": f"dearest at {hhmm(hi.target_time)}",
+                    },
+                    {
+                        "colour": T.BELIEF,
+                        "value": (ui.gbp((fc.p90 - fc.p10).mean()), "/MWh"),
+                        "name": "p10–p90 band, avg",
+                    },
+                ],
+            }
+        )
+    if not prices.empty:
+        blocks.append(
+            {
+                "grad": T.GRAD_NAVY,
+                "value": (ui.gbp(prices.price.iloc[-1]), "/MWh"),
+                "name": "APX price, last 24 h",
+                "rows": [
+                    {"colour": T.SKY, "value": (ui.gbp(prices.price.min()), "/MWh"), "name": "24 h low"},
+                    {"colour": T.MLH_RED, "value": (ui.gbp(prices.price.max()), "/MWh"), "name": "24 h high"},
+                    {"colour": T.PERFECT, "value": (f"{len(prices)}", " periods"), "name": "priced"},
+                ],
+            }
+        )
+    return blocks
+
+
 def section_live(src) -> None:
     now = datetime.now(tz=UTC)
     midnight, period = current_settlement_period(now)
@@ -145,30 +265,54 @@ def section_live(src) -> None:
         next_text = f"{next_short} at {T.local_naive(nxt.target_time):%H:%M}"
     else:
         next_short, next_text = "—", "no live schedule yet"
-    ui.section("live", f"{midnight:%A %d %B}, period {period} of 48: {next_text}.", "live")
+    ui.section("live", f"{midnight:%A %d %B}, period {period} of 48: {next_text}.", "live", T.GRAD_SELL)
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        ui.pill("Current period", f"{period} / 48", f"{T.local_naive(now):%H:%M} UK time")
-    with c2:
-        ui.pill("Next action", next_short)
-    with c3:
-        latest = prices.iloc[-1] if not prices.empty else None
-        ui.pill("Latest APX price", f"£{latest.price:,.2f}/MWh" if latest is not None else "—")
-    with c4:
-        spread = (fc.p50.max() - fc.p50.min()) if not fc.empty else None
-        ui.pill("Forecast spread, next 24 h", f"£{spread:,.0f}/MWh" if spread is not None else "—")
+    left, right = st.columns([1.15, 1], gap="medium")
+    with left, st.container(key="card-stats-now"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            ui.pill("Current period", f"{period} / 48", f"{T.local_naive(now):%H:%M} UK time")
+        with c2:
+            latest = prices.iloc[-1] if not prices.empty else None
+            ui.pill("Latest APX price", f"£{latest.price:,.2f}" if latest is not None else "—", "£/MWh")
+        with c3:
+            ui.pill("Next action", next_short)
+    with right, st.container(key="card-stats-spread"):
+        c1, op1, c2, op2, c3 = st.columns([1.2, 0.2, 1, 0.2, 1])
+        with c1:
+            spread = (fc.p50.max() - fc.p50.min()) if not fc.empty else None
+            ui.pill("Forecast spread, next 24 h", f"£{spread:,.0f}" if spread is not None else "—", "£/MWh")
+        with op1:
+            ui.operator("=")
+        with c2:
+            ui.pill("Highest p50", f"£{fc.p50.max():,.0f}" if not fc.empty else "—", "£/MWh")
+        with op2:
+            ui.operator("−")
+        with c3:
+            ui.pill("Lowest p50", f"£{fc.p50.min():,.0f}" if not fc.empty else "—", "£/MWh")
 
-    ui.fig_label("1.1", "APX MID, last 24 h actual and next 24 h forecast with p10–p90 band")
-    st.altair_chart(ui.price_chart(prices, fc, now, sched), width="stretch")
-
+    st.html('<div style="height:0.6rem"></div>')
     if not sched.empty:
-        ui.fig_label(
-            "1.2", "Today's schedule, 48 periods (charge ▲, sell ▼, hold —), current period outlined"
-        )
-        st.altair_chart(ui.period_strip(sched, now), width="stretch")
+        lp, m, r = st.columns([1.1, 1, 1.1], vertical_alignment="center", gap="small")
+        with lp:
+            ui.banner_panel(action_blocks(sched, fc), "left")
+        with m, st.container(key="donut"):
+            st.altair_chart(ui.schedule_donut(sched), width="content")
+        with r:
+            ui.banner_panel(market_blocks(prices, fc), "right")
     else:
         st.info("No live decisions yet: the decision engine writes the first 48-period schedule in Phase 2.")
+
+    st.html('<div style="height:0.8rem"></div>')
+    with st.container(key="card-price"):
+        ui.fig_label("1.1", "APX MID price per MWh: last 24 h actual, next 24 h forecast with p10–p90 band")
+        st.altair_chart(ui.price_chart(prices, fc, now, sched), width="stretch")
+    if not sched.empty:
+        with st.container(key="card-strip"):
+            ui.fig_label(
+                "1.2", "Today's schedule, 48 periods (charge ▲, sell ▼, hold —), current period outlined"
+            )
+            st.altair_chart(ui.period_strip(sched, now), width="stretch", height=T.STRIP_H + 96)
     if hold:
         ui.hold_card(hold)
     show_notes(src, "recent_prices", "next_forecast", "todays_schedule", "latest_hold")
@@ -191,35 +335,50 @@ def section_replay(src) -> None:
         pd.Timestamp(week.ts.iloc[0]).tz_convert("UTC"),
         pd.Timestamp(week.ts.iloc[-1]).tz_convert("UTC"),
     )
+    # first.day, not %-d: %-d is glibc-only and raises on Windows.
     span = (
-        f"{first:%-d} to {last:%-d %B %Y}"
+        f"{first.day} to {last.day} {last:%B %Y}"
         if first.month == last.month
-        else f"{first:%-d %B} to {last:%-d %B %Y}"
+        else f"{first.day} {first:%B} to {last.day} {last:%B %Y}"
     )
-    ui.section("replay", f"The windy week of {span}, played forward: {ui.gbp(pnl)} so far.", "replay")
-    st.slider("Periods played", min_value=1, max_value=n, value=min(96, n), step=1, key="replay_upto")
+    ui.section(
+        "replay", f"The windy week of {span}, played forward: {ui.gbp(pnl)} so far.", "replay", T.GRAD_CHARGE
+    )
+    with st.container(key="card-replay-slider"):
+        st.slider("Periods played", min_value=1, max_value=n, value=min(96, n), step=1, key="replay_upto")
     playhead = week.ts.iloc[upto - 1]
-    ui.fig_label("2.1", "Forecast band vs actual, with the playhead")
-    actual = shown.rename(columns={"ts": "bucket", "actual": "price"})[["bucket", "price"]]
-    fc = shown.rename(columns={"ts": "target_time"})[["target_time", "p10", "p50", "p90"]]
-    st.altair_chart(ui.price_chart(actual, fc, playhead), width="stretch")
-    c1, c2 = st.columns(2)
+    st.html('<div style="height:0.6rem"></div>')
+    with st.container(key="card-replay-price"):
+        ui.fig_label("2.1", "Forecast band vs actual price per MWh, with the playhead")
+        actual = shown.rename(columns={"ts": "bucket", "actual": "price"})[["bucket", "price"]]
+        fc = shown.rename(columns={"ts": "target_time"})[["target_time", "p10", "p50", "p90"]]
+        st.altair_chart(ui.price_chart(actual, fc, playhead), width="stretch")
     soc = T.localise(shown[["ts", "soc_mwh"]], ["ts"])
     cum = T.localise(shown[["ts", "cum_pnl_gbp"]], ["ts"])
-    with c1:
+    st.html('<div style="height:0.6rem"></div>')
+    c1, c2 = st.columns(2, gap="medium")
+    with c1, st.container(key="card-replay-soc"):
         ui.fig_label("2.2", "State of charge, MWh")
         st.altair_chart(
             alt.Chart(soc)
-            .mark_area(color=T.CHARGE, opacity=0.35, line={"color": T.CHARGE})
+            .mark_area(
+                color=T.vega_gradient("rgba(29,83,159,0.55)", "rgba(61,139,253,0.05)"),
+                line={"color": T.CHARGE, "strokeWidth": 2},
+                interpolate="step-after",
+            )
             .encode(x=T.time_axis("ts"), y=alt.Y("soc_mwh:Q", title="MWh", scale=alt.Scale(domain=[0, 2])))
             .properties(height=T.SECONDARY_H),
             width="stretch",
         )
-    with c2:
-        ui.fig_label("2.3", "Cumulative £")
+    with c2, st.container(key="card-replay-pnl"):
+        ui.fig_label("2.3", "Cumulative profit, £")
         st.altair_chart(
             alt.Chart(cum)
-            .mark_line(color=T.BRAND, interpolate="step-after", strokeWidth=2)
+            .mark_area(
+                color=T.vega_gradient("rgba(31,157,85,0.45)", "rgba(31,157,85,0.03)"),
+                line={"color": T.GOOD, "strokeWidth": 2.2},
+                interpolate="step-after",
+            )
             .encode(x=T.time_axis("ts"), y=alt.Y("cum_pnl_gbp:Q", title="£"))
             .properties(height=T.SECONDARY_H),
             width="stretch",
@@ -244,6 +403,10 @@ def _store_result(job, src) -> None:
     st.session_state.pop("audit_job", None)
 
 
+def shift_title(shift: int) -> str:
+    return f"★ {SHIFT_LABELS[shift]}" if shift == 0 else SHIFT_LABELS[shift]
+
+
 @st.fragment(run_every=0.5)
 def audit_progress_view() -> None:
     """Re-renders every half second while a fork audit runs in the background."""
@@ -258,8 +421,8 @@ def audit_progress_view() -> None:
     cols = st.columns(len(SHIFTS))
     for col, shift in zip(cols, SHIFTS, strict=True):
         state = states.get(shift, "queued")
-        with col, st.container(border=True):
-            st.markdown(f"**{SHIFT_LABELS[shift]}**" if shift else f"**:green[{SHIFT_LABELS[shift]}]**")
+        with col, st.container(key=f"card-shift-run-{shift + 2}"):
+            ui.shift_banner(shift_title(shift), T.GRAD_NAVY if shift == 0 else T.GRAD_GREY)
             st.markdown(f"{STATE_ICON.get(state, '○')} {jobs.STATE_LABEL.get(state, state)}")
             st.caption(job.progress.workers.get(shift) or "")
     st.caption(f"elapsed {job.running_s:04.1f} s")
@@ -270,8 +433,14 @@ def render_audit_result(src, rows: pd.DataFrame) -> None:
     cols = st.columns(len(SHIFTS))
     for col, shift in zip(cols, SHIFTS, strict=True):
         r = rows[rows["shift"] == shift].iloc[0]
-        with col, st.container(border=True):
-            st.markdown(f"**{SHIFT_LABELS[shift]}**" if shift else f"**:green[{SHIFT_LABELS[shift]}]**")
+        if shift == 0:
+            grad = T.GRAD_NAVY
+        elif pd.isna(r.pnl_delta_gbp):
+            grad = T.GRAD_GREY
+        else:
+            grad = GRAD_GOOD if r.pnl_delta_gbp > 0 else T.GRAD_SELL
+        with col, st.container(key=f"card-shift-{shift + 2}"):
+            ui.shift_banner(shift_title(shift), grad)
             st.metric(
                 "PnL",
                 ui.gbp(r.pnl_gbp),
@@ -284,11 +453,12 @@ def render_audit_result(src, rows: pd.DataFrame) -> None:
         st.error(f"shift {shift:+d} failed: {err}")
     if st.session_state.get("audit_error"):
         st.error(f"audit crashed: {st.session_state['audit_error']}")
-    c1, c2 = st.columns([3, 2])
-    with c1:
+    st.html('<div style="height:0.6rem"></div>')
+    c1, c2 = st.columns([3, 2], gap="medium")
+    with c1, st.container(key="card-audit-delta"):
         ui.fig_label("3.2", "Cost of mistiming, £ versus as decided")
         st.altair_chart(ui.delta_bars(rows), width="stretch")
-    with c2:
+    with c2, st.container(key="card-audit-log"):
         elapsed = st.session_state.get("audit_elapsed")
         if elapsed is None:
             elapsed = (rows.finished_at.max() - rows.started_at.min()).total_seconds()
@@ -325,24 +495,29 @@ def section_audit(src) -> None:
         "timing audit",
         sentence or "Click a decision: one Tiger fork, five timelines, five Vultr workers.",
         "audit",
+        T.GRAD_NAVY,
     )
-    ui.fig_label("3.1", "Five timelines: the same action shifted −2…+2 settlement periods")
 
-    c1, c2, c3 = st.columns([3, 2, 1])
-    with c1:
-        chosen = st.selectbox("Decision", options=list(labels), format_func=labels.get, key="audit_decision")
-    with c2:
-        mode = st.radio(
-            "Mode",
-            [MODE_FORK, MODE_INPROCESS],
-            horizontal=True,
-            key="audit_mode",
-            help="Fork mode takes a Tiger zero-copy fork of live data and replays on the Vultr pool. "
-            "In-process is the on-stage fallback: same replay, run locally.",
-        )
-    with c3:
-        st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
-        run = st.button("Run timing audit", type="primary", key="audit_run", disabled=running)
+    with st.container(key="card-audit-controls"):
+        ui.fig_label("3.1", "Five timelines: the same action shifted −2…+2 settlement periods")
+        c1, c2, c3 = st.columns([3, 2, 1], vertical_alignment="bottom")
+        with c1:
+            chosen = st.selectbox(
+                "Decision", options=list(labels), format_func=labels.get, key="audit_decision"
+            )
+        with c2:
+            mode = st.radio(
+                "Mode",
+                [MODE_FORK, MODE_INPROCESS],
+                horizontal=True,
+                key="audit_mode",
+                help="Fork mode takes a Tiger zero-copy fork of live data and replays on the Vultr pool. "
+                "In-process is the on-stage fallback: same replay, run locally.",
+            )
+        with c3:
+            run = st.button(
+                "Run timing audit", type="primary", key="audit_run", disabled=running, width="stretch"
+            )
 
     if run and not running:
         st.session_state["audit_action"] = decisions.set_index("decision_id").action.get(chosen, "hold")
@@ -362,6 +537,7 @@ def section_audit(src) -> None:
         if not running:
             st.rerun()
 
+    st.html('<div style="height:0.6rem"></div>')
     show_notes(src, "recent_decisions", "fork_audit")
     if running:
         st.info(
@@ -376,11 +552,13 @@ def section_audit(src) -> None:
         )
 
     sg = src.self_grade()
-    st.markdown(
-        f"Self-grade: timing within one settlement period of hindsight-optimal on "
-        f"**{sg['pct_within_one_period']:.0f}%** of {sg['n_cycles']} cycles; mean cost of mistiming "
-        f"£{sg['mean_cost_of_mistiming_gbp']:.2f} per cycle."
-    )
+    st.html('<div style="height:0.6rem"></div>')
+    with st.container(key="card-selfgrade"):
+        st.markdown(
+            f"Self-grade: timing within one settlement period of hindsight-optimal on "
+            f"**{sg['pct_within_one_period']:.0f}%** of {sg['n_cycles']} cycles; mean cost of mistiming "
+            f"£{sg['mean_cost_of_mistiming_gbp']:.2f} per cycle."
+        )
     show_notes(src, "self_grade")
 
 
@@ -400,12 +578,22 @@ def section_honesty(src) -> None:
         )
     else:
         sentence = "No backtest results yet."
-    ui.section("honesty", sentence, "honesty")
+    ui.section("honesty", sentence, "honesty", T.GRAD_FORECAST)
 
-    ui.fig_label("4.1", "Walk-forward backtest on unseen weeks, % of perfect foresight")
-    st.altair_chart(
-        ui.ladder(summary, main_prefix=main.strategy if main is not None else "tempo"), width="stretch"
-    )
+    g, lad = st.columns([1, 2.6], gap="medium")
+    with g, st.container(key="card-gauge"):
+        ui.fig_label("4.0", "Share of the best possible profit")
+        if main is not None:
+            with st.container(key="donut-gauge"):
+                st.altair_chart(ui.gauge(float(main.pct_of_perfect), "of perfect foresight"), width="content")
+            st.caption(
+                f"{main.strategy.split(' (')[0]}, walk-forward" + (f", {weeks} unseen weeks" if weeks else "")
+            )
+    with lad, st.container(key="card-ladder"):
+        ui.fig_label("4.1", "Walk-forward backtest on unseen weeks, % of perfect foresight")
+        st.altair_chart(
+            ui.ladder(summary, main_prefix=main.strategy if main is not None else "tempo"), width="stretch"
+        )
     with st.expander("Backtest table"):
         st.dataframe(
             summary.style.format({"pnl_gbp": "£{:,.0f}", "pct_of_perfect": "{:.1f}%"}),
@@ -413,13 +601,13 @@ def section_honesty(src) -> None:
             width="stretch",
         )
 
-    c1, c2 = st.columns(2)
-    with c1:
+    c1, c2 = st.columns(2, gap="medium")
+    with c1, st.container(key="card-calibration"):
         ui.fig_label("4.2", "Calibration: share of actual prices under each forecast quantile")
         cal = src.calibration()
         line = (
             alt.Chart(cal)
-            .mark_line(point=True, color=T.BELIEF)
+            .mark_line(point={"filled": True, "size": 70, "color": T.BELIEF}, color=T.BELIEF, strokeWidth=2.5)
             .encode(x=alt.X("nominal:Q", title="nominal"), y=alt.Y("observed:Q", title="observed"))
         )
         diag = (
@@ -430,17 +618,17 @@ def section_honesty(src) -> None:
         st.altair_chart((line + diag).properties(height=240), width="stretch")
         if cal.attrs.get("n"):
             st.caption(calibration_sentence(cal.attrs["n"], cal.attrs.get("coverage_p10_p90")))
-    with c2:
+    with c2, st.container(key="card-regime"):
         ui.fig_label("4.3", "By regime: calm weeks vs windy weeks")
         reg = src.backtest_by_regime()
         st.altair_chart(
             alt.Chart(reg)
-            .mark_bar(cornerRadiusEnd=3)
+            .mark_bar(cornerRadiusEnd=4)
             .encode(
                 x=alt.X("strategy:N", title=None, axis=alt.Axis(labelAngle=0, labelLimit=90)),
                 y=alt.Y("pct_of_perfect:Q", title="% of perfect"),
                 color=alt.Color(
-                    "regime:N", scale=alt.Scale(range=[T.HOLD, T.BELIEF]), legend=alt.Legend(title=None)
+                    "regime:N", scale=alt.Scale(range=[T.HOLD, T.MLH_BLUE]), legend=alt.Legend(title=None)
                 ),
                 xOffset="regime:N",
                 tooltip=["regime:N", "strategy:N", "pct_of_perfect:Q", "pnl_gbp:Q"],
@@ -449,11 +637,11 @@ def section_honesty(src) -> None:
             width="stretch",
         )
 
-    ui.eyebrow("where it's weak")
+    ui.eyebrow("where it's weak", T.GRAD_GREY)
     weak = src.weak_points()
-    cols = st.columns(min(3, max(1, len(weak))))
+    cols = st.columns(min(3, max(1, len(weak))), gap="medium")
     for i, line_ in enumerate(weak):
-        with cols[i % len(cols)], st.container(border=True):
+        with cols[i % len(cols)], st.container(key=f"card-weak-{i}"):
             st.markdown(line_)
     stats = src.storage_stats()
     before, after = stats.get("before_bytes") or 0, stats.get("after_bytes") or 0
@@ -470,32 +658,61 @@ def section_honesty(src) -> None:
 # ---------------------------------------------------------------------------------------------
 
 
+PIPELINE = [
+    (T.GRAD_GREY, "Elexon BMRS", "prices, wind, demand, every half hour"),
+    (T.GRAD_NAVY, "Tiger Data", "hypertables, aggregates, zero-copy forks"),
+    (T.GRAD_FORECAST, "LightGBM forecast", "p10 / p50 / p90, 48 periods ahead"),
+    (T.GRAD_CHARGE, "Cost-gated optimiser", "charge, sell or hold"),
+    (T.GRAD_SELL, "Vultr workers", "five timelines replayed in parallel"),
+]
+
+
+def pipeline_html() -> str:
+    steps = "".join(
+        f'<div style="background:{g}">{name}<span>{what}</span></div>' for g, name, what in PIPELINE
+    )
+    return f'<div class="tp-stack">{steps}</div>'
+
+
 def section_about() -> None:
     ui.section(
         "about",
         "Most projects stop at a prediction. Tempo turns it into a decision, then proves the timing.",
         "about",
+        T.GRAD_GREY,
     )
-    st.markdown(
-        """
-**Tempo** decides when a 2 MWh / 1 MW grid battery should charge, sell or hold on the GB half-hourly market,
-then proves whether each decision was made at the right moment by replaying it in five parallel timelines
-shifted −2..+2 settlement periods.
-
-- **Data:** Elexon BMRS, availability-time stamped, in Tiger Data hypertables with hierarchical
-  continuous aggregates.
-- **Brain:** p10/p50/p90 LightGBM forecast, cost-gated optimiser, walk-forward backtest against honest
-  baselines.
-- **Stage:** each click takes a Tiger zero-copy fork of live data; five pre-warmed Vultr workers replay
-  five timelines inside it in parallel.
-
-OxHack 2026, theme TIME, HRT track. Assumptions on screen: APX MID is the tradeable price; MID availability is
-period end + 10 min.
-"""
+    c1, c2 = st.columns([1.5, 1], gap="medium")
+    with c1:
+        ui.info_box(
+            "How Tempo works",
+            "<p><b>Tempo</b> decides when a 2 MWh / 1 MW grid battery should charge, sell or hold on the GB "
+            "half-hourly market, then proves whether each decision was made at the right moment by replaying "
+            "it in five parallel timelines shifted −2..+2 settlement periods.</p><ul>"
+            "<li><b>Data:</b> Elexon BMRS, availability-time stamped, in Tiger Data hypertables with "
+            "hierarchical continuous aggregates.</li>"
+            "<li><b>Brain:</b> p10/p50/p90 LightGBM forecast, cost-gated optimiser, walk-forward backtest "
+            "against honest baselines.</li>"
+            "<li><b>Stage:</b> each click takes a Tiger zero-copy fork of live data; five pre-warmed Vultr "
+            "workers replay five timelines inside it in parallel.</li></ul>"
+            "<p>OxHack 2026, theme TIME, HRT track. Assumptions on screen: APX MID is the tradeable price; "
+            "MID "
+            "availability is period end + 10 min.</p>",
+            T.GRAD_GREY,
+        )
+    with c2:
+        ui.info_box(
+            "The pipeline",
+            pipeline_html(),
+            T.GRAD_NAVY,
+        )
+    st.html(
+        '<div class="tp-footer">Tempo · OxHack 2026 · data from Elexon BMRS · '
+        "all times UK local · numbers on this page are read live from the database</div>"
     )
 
 
 def main() -> None:
+    ui.inject_css()
     src, _ = get_source()
     top = st.container()  # filled last, so the status dots reflect the notes the sections set
     section_live(src)

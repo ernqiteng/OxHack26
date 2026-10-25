@@ -1,32 +1,32 @@
-# Tempo dashboard theme: docs/ui-plan.md section 5.1 (paper surface, serif headings, Plex body and mono).
+# Tempo dashboard theme: grey page, white cards, navy ink, MLH red/blue/yellow accents (tempo/dashboard/theme.py).
 # Fonts are self-hosted from tempo/dashboard/static so the venue Wi-Fi cannot block them.
 [theme]
 base = "light"
-primaryColor = "#1a4d3e"
-backgroundColor = "#fafaf8"
-secondaryBackgroundColor = "#f5f5f0"
-textColor = "#1c1917"
-linkColor = "#1a4d3e"
-borderColor = "#d6d3d1"
-dataframeBorderColor = "#e7e5e4"
-dataframeHeaderBackgroundColor = "#f5f5f0"
-codeBackgroundColor = "#f0f0ea"
+primaryColor = "#e73427"
+backgroundColor = "#eef0f4"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#0b1f3a"
+linkColor = "#1d539f"
+borderColor = "#d9dde5"
+dataframeBorderColor = "#e8ebf0"
+dataframeHeaderBackgroundColor = "#f6f7fa"
+codeBackgroundColor = "#f6f7fa"
 baseRadius = "0.75rem"
-buttonRadius = "0.5rem"
+buttonRadius = "0.6rem"
 showWidgetBorder = true
 showSidebarBorder = true
 font = "IBM Plex Sans"
-headingFont = "Libre Baskerville"
+headingFont = "IBM Plex Sans"
 codeFont = "IBM Plex Mono"
 baseFontSize = 16
-headingFontSizes = ["2.25rem", "1.875rem", "1.5rem", "1.125rem", "1rem", "0.875rem"]
-headingFontWeights = [700, 700, 700, 600, 600, 600]
-chartCategoricalColors = ["#1f8a5a", "#c2410c", "#2563eb", "#a8a29e"]
-greenColor = "#15803d"
-redColor = "#991b1b"
-orangeColor = "#92400e"
-blueColor = "#1e40af"
-grayColor = "#78716c"
+headingFontSizes = ["3.6rem", "1.875rem", "1.6rem", "1.125rem", "1rem", "0.875rem"]
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+chartCategoricalColors = ["#1d539f", "#e73427", "#f7931e", "#f2a900"]
+greenColor = "#1f9d55"
+redColor = "#e73427"
+orangeColor = "#c27c00"
+blueColor = "#1d539f"
+grayColor = "#6b7385"
 
 [[theme.fontFaces]]
 family = "Libre Baskerville"
