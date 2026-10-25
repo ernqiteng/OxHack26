@@ -19,6 +19,7 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 
+from tempo.forecast.calibrate import rolling_offsets, widen
 from tempo.optimise.greedy import GreedyOptimiser
 from tempo.optimise.perfect import perfect_foresight
 from tempo.sim.battery import Battery, simulate
@@ -111,6 +112,7 @@ STRATEGIES: dict[str, StrategyFn] = {
 # --- tempo: LightGBM forecast, retrained per window ------------------------------
 
 TRAIN_EVERY = pd.Timedelta(hours=6)  # one training decision every 6 h over the train days (ernqi.md task 3)
+BAND_LOOKBACK = pd.Timedelta(days=7)  # band_check: recalibrate on the previous week's settled forecasts
 
 
 class TempoModel:
@@ -123,7 +125,8 @@ class TempoModel:
     one decision per UK day, a minute before its first period (the same prices are known then as at the
     period start), with the battery's real state of charge carried over.
 
-    The model and test-day forecasts are cached per window, so tempo and tempo_lp share one fit."""
+    The model and test-day forecasts are cached per window, so tempo and tempo_lp share one fit.
+    band_check() fills `offsets` (one recalibration offset per test day) for strategy(calibrated=True)."""
 
     def __init__(self, frames, **lgbm_params):
         self.frames = frames
@@ -131,6 +134,7 @@ class TempoModel:
         self._features: dict[pd.Timestamp, pd.DataFrame | None] = {}
         self._fits: dict[tuple, object] = {}
         self._forecasts: dict[tuple, pd.DataFrame | None] = {}
+        self.offsets: dict[pd.Timestamp, float] = {}
 
     def features(self, decision_time: pd.Timestamp, horizon: int = PERIODS_PER_DAY) -> pd.DataFrame | None:
         from tempo.backtest.features import features_at
@@ -178,7 +182,9 @@ class TempoModel:
                 self._forecasts[cache] = model.predict(f).reindex(day_times)
         return self._forecasts[cache]
 
-    def strategy(self, optimiser) -> StrategyFn:
+    def strategy(self, optimiser, calibrated: bool = False) -> StrategyFn:
+        """calibrated: widen each day's band by its offset from band_check() before planning."""
+
         def run(train_df: pd.DataFrame, test_df: pd.DataFrame, battery: Battery) -> np.ndarray:
             key = (train_df.bucket.min(), test_df.bucket.min())
             schedule = np.zeros(len(test_df))
@@ -190,6 +196,11 @@ class TempoModel:
                 q = self.forecast(key, day_times)
                 if q is None or q.isna().any().any():  # nothing to forecast from: hold all day
                     continue
+                if calibrated:
+                    if day_times[0] not in self.offsets:
+                        raise KeyError(f"no recalibration offset for {day_times[0]}: run band_check() first")
+                    off = self.offsets[day_times[0]]
+                    q = widen(q, 0.0 if np.isnan(off) else off)
                 day_battery = Battery(**{**battery.__dict__, "soc_mwh": soc})
                 mw = optimiser.plan(q, day_battery).mw.to_numpy()
                 schedule[rows] = mw
@@ -199,12 +210,87 @@ class TempoModel:
         return run
 
 
-def tempo_strategies(frames, **lgbm_params) -> dict[str, StrategyFn]:
-    """tempo (LightGBM + greedy) and tempo_lp (LightGBM + LP), sharing one model per window."""
+def tempo_strategies(frames, model: TempoModel | None = None, **lgbm_params) -> dict[str, StrategyFn]:
+    """tempo (LightGBM + greedy) and tempo_lp (LightGBM + LP), sharing one model per window. Pass `model` to
+    reuse its fits afterwards, e.g. in band_check()."""
     from tempo.optimise.lp import LPOptimiser
 
-    model = TempoModel(frames, **lgbm_params)
+    model = model or TempoModel(frames, **lgbm_params)
     return {"tempo": model.strategy(GreedyOptimiser()), "tempo_lp": model.strategy(LPOptimiser())}
+
+
+def band_check(
+    model: TempoModel, prices_hh: pd.DataFrame, windows, lookback: pd.Timedelta = BAND_LOOKBACK
+) -> pd.DataFrame:
+    """The p10-p90 band on every test day, raw and recalibrated, one row per forecast half-hour.
+
+    Each test day's offset comes only from earlier test days' forecasts whose actual price was published by
+    that day's decision time (tempo/forecast/calibrate.py), so the recalibrated band is as out of sample as
+    the raw one. Days with too little history keep the raw band (offset NaN). Fills model.offsets.
+    Reuses the model's cached fits and forecasts, so run it after run_all on the same model."""
+    rows = []
+    for w in windows:
+        train_df, test_df = (
+            _slice(prices_hh, w.train_start, w.train_end),
+            _slice(prices_hh, w.test_start, w.test_end),
+        )
+        key = (train_df.bucket.min(), test_df.bucket.min())
+        local_day = test_df.bucket.dt.tz_convert(UK).dt.date
+        for day in local_day.unique():
+            idx = np.flatnonzero((local_day == day).to_numpy())
+            day_times = pd.DatetimeIndex(test_df.bucket.iloc[idx])
+            q = model.forecast(key, day_times)
+            if q is None or q.isna().any().any():
+                continue
+            rows.append(
+                pd.DataFrame(
+                    {
+                        "week_start": w.test_start.date(),
+                        "decided_at": day_times[0] - pd.Timedelta(minutes=1),
+                        "day_start": day_times[0],
+                        "target_time": day_times,
+                        "p10": q.p10.to_numpy(),
+                        "p50": q.p50.to_numpy(),
+                        "p90": q.p90.to_numpy(),
+                        "actual": test_df.price.to_numpy()[idx],
+                    }
+                )
+            )
+    cols = [
+        "week_start",
+        "decided_at",
+        "target_time",
+        "p10",
+        "p50",
+        "p90",
+        "actual",
+        "offset",
+        "p10_cal",
+        "p90_cal",
+    ]
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    out = pd.concat(rows, ignore_index=True)
+    offsets = rolling_offsets(out, lambda t: t + pd.Timedelta(minutes=30) + MID_DELAY, lookback)
+    out["offset"] = out.decided_at.map(offsets)
+    cal = widen(out[["p10", "p50", "p90"]], out.offset.fillna(0.0))
+    out["p10_cal"], out["p90_cal"] = cal.p10, cal.p90
+    model.offsets.update(out.groupby("day_start").offset.first().to_dict())
+    return out[cols]
+
+
+def band_coverage(band: pd.DataFrame) -> dict:
+    """Share of actual prices inside the raw and the recalibrated band, over the rows that had an offset."""
+    b = band.dropna(subset=["offset"])
+    inside = lambda lo, hi: float(((b.actual >= b[lo]) & (b.actual <= b[hi])).mean())  # noqa: E731
+    return {
+        "rows": len(b),
+        "raw": inside("p10", "p90") if len(b) else None,
+        "recalibrated": inside("p10_cal", "p90_cal") if len(b) else None,
+        "median_offset": float(b.offset.median()) if len(b) else None,
+        "raw_width": float((b.p90 - b.p10).mean()) if len(b) else None,
+        "recalibrated_width": float((b.p90_cal - b.p10_cal).mean()) if len(b) else None,
+    }
 
 
 # --- running and regimes -------------------------------------------------------
