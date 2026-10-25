@@ -47,8 +47,9 @@ const pipeline = [
   { name: "Audit", sub: "Tiger fork + Vultr" },
 ];
 
-// The live Streamlit dashboard on the tempo-backend Vultr box (lhr). Override at build time with NEXT_PUBLIC_APP_URL.
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://136.244.77.120:8501";
+// The pitch dashboard (pitch/), served next to this site at /app/ on the tempo-backend Vultr box (lhr).
+// Override at build time with NEXT_PUBLIC_APP_URL, e.g. http://localhost:3001 when running both locally.
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "/app/";
 
 const code = "font-mono text-[0.9em] text-brand";
 const link = "font-semibold text-brand underline decoration-brand/30 underline-offset-4 hover:decoration-brand";
