@@ -3,7 +3,7 @@ import { PredictionChart } from "@/components/PredictionChart";
 
 export default function PredictionPage() {
   return (
-    <Chapter id="prediction">
+    <Chapter id="prediction" full>
       <PredictionChart />
     </Chapter>
   );

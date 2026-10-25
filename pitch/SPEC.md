@@ -24,7 +24,7 @@ Version A only (no stats strip, no feature table).
 - Beat 2, "no peeking" timeline. Real publication events on a time axis, and a decision line at 18:00. Events published after the line turn grey and drop out of the feature list. Presenter drags the line.
 - Line to say: "A forecast released at 7pm cannot touch a 6pm decision."
 
-## 02 · Prediction: "Is the forecast any good?" (agreed, built, awaiting confirmation)
+## 02 · Prediction: "Is the forecast any good?" (agreed, built, confirmed)
 
 Version A, three steps. Calibration moves to 04 Proof.
 
@@ -88,5 +88,5 @@ Colours sampled from toven.ai screenshots. All tokens are in app/globals.css. We
 1. Its words (headline, paragraph, what to say at each step, likely questions) move to `docs/demox.md`, the presenter script.
 2. The page goes full screen: `<Chapter id=… full>`. No text column; the chart card fills the space between the nav and the footer, with only the chapter tag and the step caption inside it.
 
-Done for: 00, 01.
+Done for: 00, 01, 02.
 - Colour for **what actually happened** (agreed): blue #2563c9 (`--color-actual`), 3 px. It's the only blue on the site, so it never reads as a forecast (green) or an action or error (amber). Use it on every chart that shows real outcomes against a forecast.

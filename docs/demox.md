@@ -55,3 +55,27 @@ A chapter is added here once it is confirmed.
 - *What are the other three datasets?* Generation mix (FUELHH), actual demand (INDO) and the system price (DISEBSP). They are loaded and stored with the rest but not used by the model yet. The generation mix gives the "76% wind" label on the opening chart. The system price was considered as Tempo's price and rejected: it is published about 24 hours late and isn't a price a battery can trade at.
 - *Why is the wind forecast moving?* Elexon republishes it through the day. For 19:00 on 22 Oct it went from 6,706 MW (06:30) down to 4,690 MW (20:30). Each version is stored separately, so a replay sees the version that existed at the time.
 - *Why 22 Oct?* It is the same day chapters 02 and 03 use, so the story follows one real day: what was known, what was forecast, what was decided.
+
+---
+
+## 02 · Prediction (about 30 s)
+
+**Headline:** 28% less wrong than yesterday's prices.
+
+**In one line:** LightGBM forecasts all 48 half-hours ahead with an uncertainty band, and beats the "same as yesterday" baseline on data it never saw.
+
+| Step | On screen | Say |
+|---|---|---|
+| 1 | The live forecast made at **01:00 on 22 Oct**: a green line (the most likely price, p50) inside a shaded band (p10–p90). Plays on arrival | "This is what Tempo actually forecast at one in the morning on 22 October, for every half-hour of the next day. The line is its best guess; the band is how unsure it is." |
+| 2 | **What actually happened** draws over it in blue | "And this is what really happened. It caught the morning rise and the evening peak. It got the midday dip wrong: prices fell further than it expected." |
+| 3 | The comparison opens on **Same as yesterday**: a grey dashed line, amber sticks showing the error each half-hour, and the error bars. **Click LightGBM.** | "Is that good? Compare it to the simplest guess there is: tomorrow will be the same as today. Every amber line is how wrong that guess was." **Click LightGBM:** "Now our model. The lines get shorter. On 1,344 half-hours it never saw, it's off by £24 a megawatt-hour on average against £34. 28% less wrong." |
+| 4 | **What the model leans on:** National demand forecast 22%, Wind share of demand 13%, Price this time yesterday 12%, Price this time last week 8%, Hour of day 8% | "And it learned the physics. The biggest signals are how much power the country will need and how much of it the wind will cover. Cold, still evenings make expensive electricity, and the model found that on its own." Then → to Decision. |
+
+**Controls:** the toggle in step 3 switches between the two models and doesn't advance the step. → moves on.
+
+**If asked**
+- *Why this forecast?* It is a typical live run, not the best one. That day it was off by £21.4 against £33.0 for "same as yesterday". The best run (21 Oct, 19:00) was 18.2 against 31.8, and we chose not to lead with it.
+- *The band misses a lot of the blue line.* Yes. It should contain about 80% of real prices; that day it contained 27 of 48, and across 405 settled live forecasts about 40%. The model is overconfident, and we say so (README, "What to improve"). Trades use only the middle line, so the band's width never changes a decision.
+- *Where does 28% come from?* The training holdout: 1,344 half-hours after the training window. Mean absolute error £24.4 for LightGBM against £33.9 for persistence (same half-hour yesterday). 1 − 24.4 / 33.9 = 28%.
+- *What do the feature percentages mean?* Each feature's share of the model's total gain: how much it improved the trees' splits during training. They show what the model relies on, not cause and effect.
+- *Why LightGBM and not a neural network?* Gradient-boosted trees are strong on tabular data, train in about 90 seconds on a laptop CPU, and beat the baseline clearly. We climbed the model ladder only as far as the data justified.
