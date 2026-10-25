@@ -3,7 +3,7 @@ import { HookChart } from "@/components/HookChart";
 
 export default function HookPage() {
   return (
-    <Chapter id="hook">
+    <Chapter id="hook" full>
       <HookChart />
     </Chapter>
   );

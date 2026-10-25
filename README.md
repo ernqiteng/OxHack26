@@ -20,6 +20,7 @@ OxHack 2026. Theme: TIME. Track: HRT, Best Use of Data for Predictions and Decis
 | [info.md](info.md) | Pre-hackathon idea and research. Superseded: don't quote it in the pitch |
 | [docs/ui-plan.md](docs/ui-plan.md) | Two-page UI plan: Toven-style pitch page; dashboard now in the grid.iamkate.com style with the plan wheel (note at the top) |
 | [docs/ui.md](docs/ui.md) | Dashboard screen content, chart grammar and audit choreography (theme superseded by ui-plan.md) |
+| [docs/demox.md](docs/demox.md) | Presenter script for the pitch site in `pitch/`: what to say at each step of each chapter |
 
 ## Quick start
 
