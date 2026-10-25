@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Libre_Baskerville } from "next/font/google";
+import IntroOverlay from "@/components/IntroOverlay";
 import Nav from "@/components/Nav";
 import "./globals.css";
 
@@ -30,9 +31,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
+      data-intro="hold"
       className={`${libreBaskerville.variable} ${plexSans.variable} ${plexMono.variable}`}
     >
       <body className="min-h-screen antialiased">
+        <IntroOverlay />
         <Nav />
         {children}
       </body>
