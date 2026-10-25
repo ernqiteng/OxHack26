@@ -29,7 +29,10 @@ export default function Nav() {
     >
       <nav className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" aria-label="Tempo home" className="shrink-0">
-          <img src="/logo.png" alt="Tempo logo" className="h-10 w-10" />
+          {/* Same mark as the pitch dashboard (pitch/components/Nav.tsx). */}
+          <span className="flex h-10 w-10 items-center justify-center bg-[#284c3f] font-serif text-xl font-bold text-background">
+            t
+          </span>
         </Link>
         <ul className="flex items-center gap-4 font-sans text-xs font-semibold tracking-[0.1em] uppercase sm:gap-10 sm:text-sm">
           {links.map((link) => {
