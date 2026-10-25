@@ -16,7 +16,7 @@ One real day of GB prices, revealed in five steps. The presenter presses → to 
 - Live badge in a corner: "● LIVE · period N · £X/MWh" from the API. Hidden if the API can't be reached.
 - No inputs.
 
-## 01 · Data: "Where does it come from, and can you trust it?" (agreed)
+## 01 · Data: "Where does it come from, and can you trust it?" (agreed, built, awaiting confirmation)
 
 Version A only (no stats strip, no feature table).
 

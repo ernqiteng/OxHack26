@@ -125,8 +125,85 @@ def hook(conn) -> dict:
     }
 
 
+DATA_DAY = date(2026, 10, 22)  # the day chapters 02 and 03 use
+DATA_FROM, DATA_TO = 6, 24  # timeline window, hours of DATA_DAY (London)
+DATA_TARGET = "19:00"  # the evening peak whose forecasts the timeline tracks
+DATA_DECISION = "18:00"  # where the draggable decision line starts
+TRAINING = Path(__file__).resolve().parents[1] / "models" / "training.json"
+
+
+def data(conn) -> dict:
+    from tempo.config import settings
+    from tempo.db.stats import storage_stats
+
+    st = storage_stats(conn)
+    first, datasets = conn.execute("SELECT min(start_time), count(DISTINCT dataset) FROM grid_raw").fetchone()
+    hh, daily, weekly = (
+        conn.execute(f"SELECT count(*) FROM {v}").fetchone()[0]
+        for v in ("prices_hh", "prices_daily", "prices_weekly")
+    )  # noqa: S608
+    decisions, holds = conn.execute(
+        "SELECT count(*), count(*) FILTER (WHERE action = 'hold') FROM decisions WHERE run_id = 'live'"
+    ).fetchone()
+    training = json.loads(TRAINING.read_text())
+
+    day, _ = _day_bounds(DATA_DAY)
+    lo, hi = day + timedelta(hours=DATA_FROM), day + timedelta(hours=DATA_TO)
+    hh_, mm_ = map(int, DATA_TARGET.split(":"))
+    target = day + timedelta(hours=hh_, minutes=mm_)
+    hm = lambda t: t.astimezone(LONDON).strftime("%H:%M")  # noqa: E731
+
+    price = conn.execute(
+        """SELECT start_time, available_at, value FROM grid_raw
+           WHERE dataset = 'MID' AND series = 'APXMIDP' AND available_at >= %s AND available_at < %s
+           ORDER BY available_at""",
+        (lo, hi),
+    ).fetchall()
+
+    def forecasts(dataset: str, series: str) -> list[dict]:
+        # Every publication in the window, with what it said about the target half-hour (if it covered it).
+        rows = conn.execute(
+            """SELECT available_at, max(value) FILTER (WHERE start_time = %s)
+               FROM grid_raw WHERE dataset = %s AND series = %s AND available_at >= %s AND available_at < %s
+               GROUP BY 1 ORDER BY 1""",
+            (target, dataset, series, lo - timedelta(hours=6), hi),
+        ).fetchall()
+        out = [{"pub": hm(a), "value": v} for a, v in rows if a >= lo]
+        before = [{"pub": hm(a), "value": v} for a, v in rows if a < lo and v is not None]
+        return before[-1:] + out  # the last one before the window, so the panel is never empty
+
+    return {
+        "pipeline": {
+            "history_from": first.astimezone(LONDON).date().isoformat(),
+            "datasets": datasets,
+            "rows": st["rows"],
+            "pct_compressed": round(st["pct_saved"], 1),
+            "chunks": st["total_chunks"],
+            "hh": hh,
+            "daily": daily,
+            "weekly": weekly,
+            "features": len(training["features"]),
+            "train_seconds": training["seconds"],
+            "decisions": decisions,
+            "holds": holds,
+        },
+        "timeline": {
+            "day": DATA_DAY.isoformat(),
+            "from": f"{DATA_FROM:02d}:00",
+            "to": f"{DATA_TO:02d}:00",
+            "target": DATA_TARGET,
+            "decision": DATA_DECISION,
+            "mid_delay_min": settings().mid_availability_delay_min,
+            "price": [{"pub": hm(a), "period": hm(s), "value": round(v, 2)} for s, a, v in price],
+            "wind": forecasts("WINDFOR", ""),
+            "demand": forecasts("NDF", "N"),
+        },
+    }
+
+
 CHAPTERS = {
     "hook": hook,
+    "data": data,
 }
 
 
