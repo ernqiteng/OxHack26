@@ -78,3 +78,11 @@ scripts/      dev_db.sh  backfill.py  poll.py  train.py  backtest.py  demo_reset
 docs/         all project documents
 models/       trained model files (gitignored)
 ```
+
+## What to improve
+
+Weaknesses we know about, measured on our own data.
+
+- **The forecast band is overconfident.** The p10–p90 band should contain about 80% of real prices. On 405 settled live forecasts it contains 40% (63% on the 1,344-row training holdout). Trades use p50 only, so this never changes a decision, but the band needs recalibrating (for example conformal adjustment on recent residuals) before the LP's conservative mode can use it.
+- **The model doesn't help more in windy weeks.** We expected forecasting to matter most when wind makes prices volatile. Over 100 unseen weeks, Tempo's lead over persistence is 16 points on calm weeks and only 12 on windy ones. Better wind and demand features are the likely fix.
+- **Room to the ceiling.** Tempo captures 66.4% of perfect foresight (worst week 31.2%). The LP optimiser reaches 68.3% and is one flag away (`scripts/decide.py --optimiser lp`).

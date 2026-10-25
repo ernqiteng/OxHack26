@@ -44,7 +44,7 @@ Version A, four steps. **Changed from 22 Oct to the 23 Oct 07:00 live run** (dec
 - Step 4, what-if sliders: wear £0–30/MWh (live 10) and efficiency 75–95% (live 90). There are 155 precomputed runs of the real optimiser. Wear ≤ £4 brings the overnight cycle back (10 trading, £201.10). £12 shrinks the daytime cycle. ≥ £16 only sells the stored energy (2 trading, £181.42).
 - To flag to Ernqi: greedy.py's reason strings print UTC times, and the old dashboard and API show them as they are.
 
-## 04 · Proof: "Does it make money, compared with the alternatives?" (agreed)
+## 04 · Proof: "Does it make money, compared with the alternatives?" (agreed, built, awaiting confirmation)
 
 Version A, three steps. "Where it's weak" (calibration, regime gap) is not on the site. It is in README.md under "What to improve".
 

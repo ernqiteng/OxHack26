@@ -421,11 +421,94 @@ def decision(conn) -> dict:
     }
 
 
+STRATEGIES = [  # ladder order, worst to best
+    ("simple_rule", "Simple rule", "charge 1–5am, sell 5–7pm"),
+    ("persistence_greedy", "Same as yesterday", "persistence forecast + our optimiser"),
+    ("tempo", "Tempo", "LightGBM + greedy · what runs live"),
+    ("tempo_lp", "Tempo LP", "LightGBM + linear program"),
+    ("perfect", "Perfect foresight", "knows every price in advance"),
+]
+REPLAY = TRAINING.parent / "replay_week.parquet"
+
+
+def proof(conn) -> dict:
+    from tempo.backtest.replay import per_period_pnl
+    from tempo.decide.engine import battery_from_settings
+    from tempo.optimise.perfect import perfect_foresight
+
+    ladder = []
+    for key, name, sub in STRATEGIES:
+        n, pnl, perfect, lo, hi, losing = conn.execute(
+            """SELECT count(*), sum(pnl_gbp), sum(perfect_pnl_gbp), min(pct_of_perfect), max(pct_of_perfect),
+                      count(*) FILTER (WHERE pnl_gbp < 0)
+               FROM backtest_results WHERE run_id = %s AND strategy = %s""",
+            (BACKTEST_RUN, key),
+        ).fetchone()
+        ladder.append(
+            {
+                "key": key,
+                "name": name,
+                "sub": sub,
+                "weeks": n,
+                "pnl": round(pnl),
+                "pct": round(100 * pnl / perfect, 1),
+                "worst": round(lo, 1),
+                "best": round(hi, 1),
+                "losing": losing,
+            }
+        )
+    weeks = [
+        {"week": w.isoformat(), "pct": round(p, 1), "regime": r, "pnl": round(g, 2)}
+        for w, p, r, g in conn.execute(
+            "SELECT week_start, pct_of_perfect, regime, pnl_gbp FROM backtest_results "
+            "WHERE run_id = %s AND strategy = 'tempo' ORDER BY 1",
+            (BACKTEST_RUN,),
+        ).fetchall()
+    ]
+
+    meta = json.loads(REPLAY.with_suffix(".json").read_text())
+    rp = pd.read_parquet(REPLAY)
+    battery = battery_from_settings()
+    best_mw = perfect_foresight(rp.actual.to_numpy(), battery).mw.to_numpy()
+    _, best_pnl = per_period_pnl(battery, best_mw, rp.actual.to_numpy())
+    perfect_cum = best_pnl.cumsum()
+    week_perfect = conn.execute(
+        "SELECT perfect_pnl_gbp FROM backtest_results "
+        "WHERE run_id = %s AND strategy = 'tempo' AND week_start = %s",
+        (BACKTEST_RUN, meta["week_start"]),
+    ).fetchone()[0]
+    if abs(perfect_cum[-1] - week_perfect) > 0.05 or abs(rp.cum_pnl_gbp.iloc[-1] - meta["pnl_gbp"]) > 0.05:
+        raise SystemExit("replay week no longer matches the backtest totals")
+    replay = [
+        {
+            "t": r.ts.tz_convert(LONDON).strftime("%a %H:%M"),
+            "actual": round(r.actual, 2),
+            "p50": round(r.p50, 2),
+            "mw": round(r.mw, 3),
+            "soc": round(max(r.soc_mwh, 0.0), 3),
+            "cum": round(r.cum_pnl_gbp, 2),
+            "perfect": round(float(perfect_cum[k]), 2),
+        }
+        for k, r in enumerate(rp.itertuples())
+    ]
+    return {
+        "run_id": BACKTEST_RUN,
+        "ladder": ladder,
+        "weeks": weeks,
+        "replay": {
+            **{k: meta[k] for k in ("week_start", "regime", "pct_of_perfect", "pnl_gbp", "chosen_as")},
+            "perfect_gbp": round(week_perfect, 2),
+            "periods": replay,
+        },
+    }
+
+
 CHAPTERS = {
     "hook": hook,
     "data": data,
     "prediction": prediction,
     "decision": decision,
+    "proof": proof,
 }
 
 
