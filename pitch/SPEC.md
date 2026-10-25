@@ -34,7 +34,7 @@ Version A, three steps. Calibration moves to 04 Proof.
 - Step 3, what the model looks at: horizontal bars for the top 5 features by gain, in plain English. National demand forecast 22%, wind share of demand 13%, yesterday's price 12%, last week's price 8%, hour of day 8%.
 - Only input: the toggle.
 
-## 03 · Decision: "What did it actually do, and why?" (agreed)
+## 03 · Decision: "What did it actually do, and why?" (agreed, built, awaiting confirmation)
 
 Version A, four steps. **Changed from 22 Oct to the 23 Oct 07:00 live run** (decision_id 1345–1392, agreed with Ayo): on 22 Oct the costs never change the schedule, and its "16p" hold wasn't decided by the cost gate. Re-running GreedyOptimiser on the stored forecast (start SoC 1.0 MWh) reproduces all 48 stored actions.
 

@@ -270,10 +270,162 @@ def prediction(conn) -> dict:
     }
 
 
+# The next morning's live run. On 22 Oct the costs never change the schedule; here the cost gate decides:
+# the overnight cycle is held, and lowering the wear brings it back (SPEC.md, 03).
+DECISION_DECIDED = datetime(2026, 10, 23, 7, 0, tzinfo=LONDON)
+DECISION_HOLD_AT = "04:00"  # decision 1386: buy 04:00, sell 07:00, spread 18.75 <= cost 22.82
+WHATIF_WEAR = list(range(0, 31))  # £ per MWh delivered (cycle cost / capacity); the live setting is 10
+WHATIF_EFF = [75, 80, 85, 90, 95]  # round-trip efficiency %, live 90
+
+_GATE = (
+    r"spread (?P<spread>[\d.-]+) (?P<op><=|>) cost (?P<cost>[\d.-]+) "
+    r"\(efficiency loss (?P<loss>[\d.-]+) at \d+% \+ degradation (?P<deg>[\d.-]+)/MWh\)"
+)
+
+
+def _plain_reason(reason: str, local: dict[str, str], p: dict[str, float], eff: float) -> dict:
+    """The optimiser's reason string, made readable: times in UK time (greedy.py prints UTC), plain words.
+
+    Raises on any string it doesn't recognise, so the site never shows a reason it can't explain.
+    """
+    import re
+
+    def gate(m):
+        return {k: float(m[k]) for k in ("spread", "cost", "loss", "deg")}
+
+    if m := re.fullmatch(rf"charge for sale at (?P<t>\d\d:\d\d): {_GATE}", reason):
+        t = local[m["t"]]
+        return {"kind": "charge", "text": f"Buy now to sell at {t} (£{p[t]:.2f}).", "partner": t, **gate(m)}
+    if m := re.fullmatch(rf"sell energy bought at (?P<t>\d\d:\d\d): {_GATE}", reason):
+        t = local[m["t"]]
+        return {
+            "kind": "sell",
+            "text": f"Sell the energy bought at {t} (£{p[t]:.2f}).",
+            "partner": t,
+            **gate(m),
+        }
+    if m := re.fullmatch(
+        r"sell stored energy: price (?P<price>[\d.-]+) > wear (?P<wear>[\d.-]+)/MWh", reason
+    ):
+        return {
+            "kind": "sell",
+            "text": f"Sell energy already in the battery: £{float(m['price']):.2f} beats the wear of "
+            f"£{float(m['wear']):.2f}/MWh.",
+        }
+    if m := re.fullmatch(rf"hold: {_GATE}", reason):
+        g = gate(m)
+        sell = g["loss"] / (1 - eff)  # cost_gate: loss = (1 - eff) * sell price
+        buy = sell - g["spread"]
+        near = lambda v: min(p, key=lambda t: abs(p[t] - v))  # noqa: E731
+        return {
+            "kind": "hold-gate",
+            "text": "Its best trade doesn\u2019t cover the costs of a cycle.",
+            "buy_t": near(buy),
+            "sell_t": near(sell),
+            "buy": round(buy, 2),
+            "sell": round(sell, 2),
+            **g,
+        }
+    if m := re.fullmatch(
+        r"hold: battery full between (?P<a>\d\d:\d\d) and (?P<b>\d\d:\d\d) \(SoC .*\)", reason
+    ):
+        a, b = local[m["a"]], local[m["b"]]
+        return {
+            "kind": "hold-full",
+            "text": f"Its best trade (buy {a}, sell {b}) needs room the battery doesn\u2019t have: it is "
+            "already full in between, with energy for dearer half-hours.",
+        }
+    if reason.startswith("hold: better-paying periods"):
+        return {"kind": "hold-busy", "text": "Dearer half-hours nearby already use the battery\u2019s power."}
+    if reason == "hold: no other free period in the horizon to pair with":
+        return {"kind": "hold-none", "text": "Nothing left in the next 24 hours to trade against."}
+    raise SystemExit(f"unrecognised optimiser reason: {reason!r}")
+
+
+def decision(conn) -> dict:
+    import numpy as np
+
+    from tempo.decide.engine import battery_from_settings, current_soc
+    from tempo.optimise.greedy import GreedyOptimiser
+    from tempo.sim.battery import simulate
+
+    q = pd.DataFrame(
+        conn.execute(
+            """SELECT f.target_time, f.p10, f.p50, f.p90, a.price FROM forecasts f
+               LEFT JOIN prices_hh a ON a.bucket = f.target_time
+               WHERE f.run_id = 'live' AND f.decided_at = %s ORDER BY 1""",
+            (DECISION_DECIDED,),
+        ).fetchall(),
+        columns=["t", "p10", "p50", "p90", "actual"],
+    ).set_index("t")
+    stored = pd.DataFrame(
+        conn.execute(
+            "SELECT target_time, decision_id, action, mw, reason FROM decisions "
+            "WHERE run_id = 'live' AND decided_at = %s ORDER BY 1",
+            (DECISION_DECIDED,),
+        ).fetchall(),
+        columns=["t", "id", "action", "mw", "reason"],
+    ).set_index("t")
+    battery = battery_from_settings(current_soc(conn, "live", DECISION_DECIDED, default=None) or None)
+    live = GreedyOptimiser().plan(q, battery)
+    if not np.allclose(live.mw.to_numpy(), stored.mw.to_numpy(), atol=1e-6):
+        raise SystemExit("re-running the optimiser no longer reproduces the stored live decisions")
+
+    local = {t.strftime("%H:%M"): t.astimezone(LONDON).strftime("%H:%M") for t in q.index.tz_convert("UTC")}
+    p50 = {t.astimezone(LONDON).strftime("%H:%M"): float(v) for t, v in q.p50.items()}
+    sim = simulate(battery, live.mw.to_numpy(), q.p50.to_numpy())
+    periods = []
+    for k, (t, row) in enumerate(stored.iterrows()):
+        periods.append(
+            {
+                "t": t.astimezone(LONDON).strftime("%H:%M"),
+                "id": int(row.id),
+                "p50": round(float(q.p50.iloc[k]), 2),
+                "actual": None if pd.isna(q.actual.iloc[k]) else round(float(q.actual.iloc[k]), 2),
+                "action": row.action,
+                "mw": round(float(row.mw), 3),
+                "soc": round(float(sim.soc_path[k]), 3),
+                "why": _plain_reason(row.reason, local, p50, battery.rt_efficiency),
+            }
+        )
+    hold = next(p for p in periods if p["t"] == DECISION_HOLD_AT and p["why"]["kind"] == "hold-gate")
+
+    def run(wear: float, eff: float) -> dict:
+        b = battery_from_settings(battery.soc_mwh)
+        b.cycle_cost_gbp, b.rt_efficiency = wear * b.capacity_mwh, eff / 100
+        plan = GreedyOptimiser().plan(q, b)
+        mw = plan.mw.to_numpy()
+        exp = simulate(b, mw, q.p50.to_numpy())
+        code = "".join({"charge": "c", "discharge": "s", "hold": "h"}[a] for a in plan.action)
+        return {
+            "a": code,
+            "soc": [round(float(v), 3) for v in exp.soc_path],
+            "trades": int((plan.action != "hold").sum()),
+            "expected": round(exp.pnl_gbp, 2),
+        }
+
+    grid = {f"{w}_{e}": run(w, e) for w in WHATIF_WEAR for e in WHATIF_EFF}
+    return {
+        "decided_at": DECISION_DECIDED.strftime("%Y-%m-%d %H:%M"),
+        "battery": {
+            "capacity_mwh": battery.capacity_mwh,
+            "power_mw": battery.power_mw,
+            "rt_efficiency": battery.rt_efficiency,
+            "wear_per_mwh": battery.cycle_cost_gbp / battery.capacity_mwh,
+            "start_soc": battery.soc_mwh,
+        },
+        "periods": periods,
+        "expected_pnl": round(sim.pnl_gbp, 2),
+        "hold": hold,
+        "whatif": {"wear": WHATIF_WEAR, "eff": WHATIF_EFF, "grid": grid},
+    }
+
+
 CHAPTERS = {
     "hook": hook,
     "data": data,
     "prediction": prediction,
+    "decision": decision,
 }
 
 
