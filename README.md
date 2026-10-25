@@ -8,7 +8,7 @@ Built at OxHack 2026. Theme: **TIME**.
 |---|---|
 | Live dashboard | http://136.244.77.120:8501 (Streamlit on the `tempo-backend` Vultr box, London) |
 | Presentation website | [`presentation/`](presentation/), run it with `cd presentation && npm install && npm run dev` ([details](#presentation-website)) |
-| Pitch dashboard | [`pitch/`](pitch/), the chapter-by-chapter demo site the presenter drives ([details](#pitch-dashboard)); script in [docs/demox.md](docs/demox.md) |
+| Pitch dashboard | http://136.244.77.120/app/ (what "Open the app" opens), source in [`pitch/`](pitch/): the chapter-by-chapter demo site the presenter drives ([details](#pitch-dashboard)); script in [docs/demox.md](docs/demox.md) |
 
 > "It's buy-low-sell-high for a battery. The hard part isn't the price. It's the timing."
 
@@ -331,13 +331,15 @@ The compute layer. Tiger supplies the data forks; Vultr supplies the machines th
               │  tempo-poller    poll.py         │──────┐
               │  tempo-decider   decide.py       │      │ reads / writes
               │  tempo-dashboard Streamlit :8501 │      ▼
+              │  tempo-api       uvicorn :8000   │
+              │  nginx :80  /  /app/  /api/      │
               └────────────────┬─────────────────┘   Tiger Data free service (us-east-1)
                                │ audit click            primary  ──fork──▶  audit fork
                                ▼                                               ▲
               tempo-worker-1..5 (Vultr, ewr) ── POST /replay (bearer token) ───┘
 ```
 
-systemd units live in [`deploy/systemd/`](deploy/systemd/): `tempo-dashboard`, `tempo-poller`, `tempo-decider` (backend) and `tempo-worker` (workers). [`deploy/bootstrap.sh`](deploy/bootstrap.sh) installs a box as either role. Logs go to `/var/log/tempo/*.log`.
+systemd units live in [`deploy/systemd/`](deploy/systemd/): `tempo-dashboard`, `tempo-poller`, `tempo-decider`, `tempo-api` (backend) and `tempo-worker` (workers). [`deploy/bootstrap.sh`](deploy/bootstrap.sh) installs a box as either role; on the backend it also installs nginx with [`deploy/nginx/tempo.conf`](deploy/nginx/tempo.conf), which serves the presentation website at `/`, the pitch dashboard at `/app/` and proxies `/api/` to `tempo-api`. Logs go to `/var/log/tempo/*.log`.
 
 ---
 
@@ -464,7 +466,7 @@ npm run build         # static export to presentation/out/
 npm start             # serve presentation/out/ locally
 ```
 
-"Open the app" links to the live dashboard on the `tempo-backend` Vultr box (`http://136.244.77.120:8501`). To point it elsewhere, set `NEXT_PUBLIC_APP_URL` in `presentation/.env.local` before building.
+"Open the app" opens the pitch dashboard, served next to this site at `/app/` on the `tempo-backend` Vultr box (http://136.244.77.120/app/). To point it elsewhere, for example at `http://localhost:3001` when running both sites locally, set `NEXT_PUBLIC_APP_URL` in `presentation/.env.local` before building.
 
 ---
 
@@ -479,6 +481,8 @@ cd pitch && npm install
 npm run dev -- -p 3001                     # http://localhost:3001, hot reload
 npm run build && npx serve out -l 3001     # the static site, for presenting
 ```
+
+On the box it lives at http://136.244.77.120/app/ with the API at `/api/` on the same address. `scripts/create_backend.py --deploy` builds both websites here with npm (the box has no Node), copies the exports to `/var/www/tempo`, and restarts the units; `--no-sites` skips the builds.
 
 ---
 

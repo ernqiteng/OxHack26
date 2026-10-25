@@ -19,8 +19,9 @@ RSYNC_EXCLUDES = [
     ".env",
     ".venv/",
     ".git/",
-    "web/node_modules/",
-    "web/.next/",
+    "node_modules/",
+    ".next/",
+    "out/",  # the static site exports go to /var/www/tempo separately (rsync_dir)
     "__pycache__/",
     "*.pyc",
     "*.egg-info/",
@@ -90,18 +91,23 @@ def wait_ssh(ip: str, key: Path, timeout: float = 300) -> None:
     raise TimeoutError(f"no SSH login to {ip} within {timeout:.0f}s: {last[-300:]}")
 
 
-def rsync_repo(ip: str, key: Path, dest: str = "/opt/tempo/") -> None:
+def rsync_dir(src: Path, ip: str, key: Path, dest: str, excludes: list[str] = ()) -> None:
+    """Mirror the contents of `src` into `dest` on the box (trailing slashes: contents, not the folder)."""
     ssh(ip, key, f"mkdir -p {dest}")
     cmd = [
         "rsync",
         "-az",
         "--delete",
-        *sum((["--exclude", e] for e in RSYNC_EXCLUDES), []),
+        *sum((["--exclude", e] for e in excludes), []),
         "-e",
         f"ssh -i {key} {' '.join(SSH_OPTS)}",
-        f"{REPO_ROOT}/",
-        f"root@{ip}:{dest}",
+        f"{src}/",
+        f"root@{ip}:{dest.rstrip('/')}/",
     ]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if r.returncode != 0:
-        raise RuntimeError(f"rsync to {ip} failed: {r.stderr[-500:]}")
+        raise RuntimeError(f"rsync {src} to {ip} failed: {r.stderr[-500:]}")
+
+
+def rsync_repo(ip: str, key: Path, dest: str = "/opt/tempo/") -> None:
+    rsync_dir(REPO_ROOT, ip, key, dest, RSYNC_EXCLUDES)

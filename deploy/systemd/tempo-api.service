@@ -1,0 +1,19 @@
+# JSON API for the pitch dashboard on the backend box. Local only: nginx proxies /api/ to it on port 80.
+[Unit]
+Description=Tempo JSON API (pitch dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tempo
+WorkingDirectory=/opt/tempo
+EnvironmentFile=/opt/tempo/.env
+ExecStart=/opt/tempo/.venv/bin/uvicorn tempo.api.server:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/tempo/api.log
+StandardError=append:/var/log/tempo/api.log
+
+[Install]
+WantedBy=multi-user.target

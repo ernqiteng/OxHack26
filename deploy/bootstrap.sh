@@ -3,7 +3,8 @@
 # private, so scripts/build_worker_image.py copies it over with rsync instead of git clone).
 #
 #   ROLE=worker TEMPO_WORKER_TOKEN=... bash /opt/tempo/deploy/bootstrap.sh    # replay worker on :8000
-#   ROLE=backend bash /opt/tempo/deploy/bootstrap.sh                          # dashboard :8501 + poller
+#   ROLE=backend bash /opt/tempo/deploy/bootstrap.sh                          # dashboard :8501, poller, decider,
+#                                                                              # api, nginx :80 (sites + /api/)
 #
 # Safe to run twice. Works in a plain Docker container too (systemd and ufw steps are skipped there).
 set -euo pipefail
@@ -16,6 +17,15 @@ HAVE_SYSTEMD=0; [ -d /run/systemd/system ] && HAVE_SYSTEMD=1
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q python3 python3-venv python3-pip rsync curl ca-certificates
+if [ "$ROLE" = backend ]; then
+  # nginx serves the two static sites and proxies /api/; create_backend.py copies the built sites here.
+  apt-get install -y -q nginx
+  mkdir -p /var/www/tempo/presentation /var/www/tempo/app
+  install -m 644 "$APP/deploy/nginx/tempo.conf" /etc/nginx/sites-available/tempo
+  ln -sf /etc/nginx/sites-available/tempo /etc/nginx/sites-enabled/tempo
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t
+fi
 
 # 1 GB plans: pip builds and lightgbm imports want headroom.
 if [ "$HAVE_SYSTEMD" = 1 ] && ! swapon --show | grep -q /swapfile; then
@@ -45,10 +55,18 @@ if [ "$HAVE_SYSTEMD" = 1 ]; then
   if [ "$ROLE" = worker ]; then
     systemctl enable --now tempo-worker
     systemctl restart tempo-worker
+  else
+    systemctl enable --now nginx
+    systemctl reload nginx
   fi
   if command -v ufw >/dev/null; then
     ufw allow OpenSSH >/dev/null
-    if [ "$ROLE" = worker ]; then ufw allow 8000/tcp >/dev/null; else ufw allow 8501/tcp >/dev/null; fi
+    if [ "$ROLE" = worker ]; then
+      ufw allow 8000/tcp >/dev/null
+    else
+      ufw allow 80/tcp >/dev/null
+      ufw allow 8501/tcp >/dev/null
+    fi
     ufw --force enable >/dev/null
   fi
 fi
