@@ -32,19 +32,19 @@ make test-db          # tests that need the local DB
 make dashboard
 ```
 
-## Pitch website
+## Presentation website
 
-A static Next.js 15 site in `pitch/`: home (about + how it works), Tiger Data and Vultr pages. Needs Node 20+.
+A static Next.js 15 site in `presentation/`: home (about + how it works), Tiger Data and Vultr pages. Needs Node 20+.
 
 ```bash
-cd pitch
+cd presentation
 npm install
 npm run dev           # http://localhost:3000, hot reload
-npm run build         # static export to pitch/out/
-npm start             # serve pitch/out/ locally
+npm run build         # static export to presentation/out/
+npm start             # serve presentation/out/ locally
 ```
 
-"Open the app" links to the live dashboard on the `tempo-backend` Vultr box (`http://136.244.77.120:8501`). To point it elsewhere, set `NEXT_PUBLIC_APP_URL` in `pitch/.env.local` before building.
+"Open the app" links to the live dashboard on the `tempo-backend` Vultr box (`http://136.244.77.120:8501`). To point it elsewhere, set `NEXT_PUBLIC_APP_URL` in `presentation/.env.local` before building.
 
 ## Before every rehearsal and before going on stage
 
@@ -88,6 +88,6 @@ tempo/        the package (see docs/plan.md section 1 for who owns what)
 tests/        unit/  contracts/  db/  live/  fixtures/
 scripts/      dev_db.sh  backfill.py  poll.py  train.py  backtest.py  demo_reset.py
 docs/         all project documents
-pitch/        the pitch website (Next.js, static export)
+presentation/ the presentation website (Next.js, static export)
 models/       trained model files (gitignored)
 ```
