@@ -215,7 +215,7 @@ Take Tiger Data away and both the feature pipeline and the signature mechanic go
 
 The workers are pre-warmed rather than created on the click, because a new instance takes about 40 s to boot and 80 s to accept SSH. The click still calls the Vultr API to find the tagged workers. Without them the audit falls back to the same replay run in-process, which is not the parallel story.
 
-Model training is not a Vultr job. LightGBM trains on a laptop CPU in about 90 seconds, most of it fetching features from Tiger, and the model is then copied to the backend box. No GPU is used: gradient-boosted trees on tabular features do not need one. (The account's GPU access is unclear: on 24 Oct no GPU plan reported any location, but a short-lived A16 instance was later created on it. Either way, nothing in Tempo runs on a GPU.)
+Model training is not a Vultr job. LightGBM trains on a laptop CPU in about 90 seconds, most of it fetching features from Tiger, and the model is then copied to the backend box. No GPU is used: gradient-boosted trees on tabular features do not need one. (A Vultr NVIDIA A16 is available in `lhr`: the plan only appears under `type=all` in the API, not `type=vcg`. Three A16 boxes ran for about 29 box-minutes, $1.44; training 500 models took 17.4 s on the A16 against 28.0 s on the same box's CPU, about 1.6x faster, but the GPU did not improve the forecasts. The live system is CPU-only.)
 
 ---
 
@@ -262,7 +262,7 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 
 | Gate | Done when | Decisions made here |
 |---|---|---|
-| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU: checked, no GPU plan had a location on this account at the time, so CPU only. Vultr instance limit checked. Who owns what. |
+| **Gate 0: Setup** (first hour) | Repo, Tiger Data free service, Vultr account, Elexon pull tested | Price series is APX Market Index Data (system price publishes ~24h late, N2EX has frequent zero rows). Fix the MID availability delay. Vultr GPU: checked with `type=vcg`, which missed the A16 (it only appears under `type=all`), so CPU only at the time. Vultr instance limit checked. Who owns what. |
 | **Gate 1: Data** | History loaded, live polling running, aggregates building | Confirm availability-time stamping on every row |
 | **Gate 2: Baseline demo** | Backtest table with simple rule, greedy + persistence, perfect foresight | Lookahead sanity check: only perfect foresight should "know" the future |
 | **Gate 3: Tempo decides** | LightGBM forecast feeding the cost gate, Tempo row in the table | |
@@ -284,7 +284,7 @@ Checkpoints instead of clock times, so the plan holds whatever the final schedul
 | Forks too slow on the day | Primary database is a free service (forks ready in 36 to 42 s in testing). If still slow, pre-create the fork before the demo and have the click dispatch workers into it, or switch the toggle to in-process ("same replay, run locally") |
 | Tiger free tier allows only 2 services | Audit uses one fork per click (section 11). Nobody creates other forks on demo day; `demo_reset.py` checks only the primary exists. The audit button is disabled while an audit runs |
 | Unfamiliar domain for judges | Open with the buy-low-sell-high line |
-| No GPU in the build (no GPU plan had a location on 24 Oct; an A16 instance was briefly created later but nothing ran on it) | Train on CPU, lean on parallel workers as the Vultr story, never say "GPU" on stage |
+| No GPU in the live build (the 24 Oct check used `type=vcg` and missed the A16 in `lhr`; three A16 boxes later ran, and the GPU trained 1.6x faster but did not improve the forecasts) | Train on CPU, lean on parallel workers as the Vultr story, never say "GPU" on stage |
 
 ---
 

@@ -457,8 +457,8 @@ ORDER BY start_time, available_at DESC
 **Prices read the aggregates**, which have no `available_at`. So they use what the code calls **"Option A"**: since every MID row's `available_at` is exactly `start + 40 min` (stamped at ingest), a half-hour bucket is usable iff `bucket_start <= T − 40 min`. That's the `cutoff`:
 
 ```python
-cutoff = T - timedelta(minutes=30 + delay)   # latest usable bucket start
-complete_by = cutoff + HALF_HOUR             # a day/week is usable once it ends by here
+cutoff = T - timedelta(minutes=30 + delay)  # latest usable bucket start
+complete_by = cutoff + HALF_HOUR  # a day/week is usable once it ends by here
 ```
 
 A day or week is only usable once **all** its half-hours are usable, which is why daily and weekly queries check that the bucket's *end* is `<= complete_by`. The aggregate for a day that's still in progress is computed from whatever half-hours exist in the table, which can include ones that weren't "available" yet at T. Waiting for the whole day or week to be usable avoids that, and also avoids a half-day spread or a half-week stddev that would mean something different from the complete ones the model was trained on.
@@ -785,7 +785,7 @@ The signature mechanic. A forecast can be right while the decision made from it 
 ### 14.1 Shifting a schedule (`shifts.py: shift_schedule`)
 
 ```python
-shift_schedule(mw, shift)   # np.roll, but periods that wrap around become hold
+shift_schedule(mw, shift)  # np.roll, but periods that wrap around become hold
 ```
 
 Positive shift = later. Real output for `mw = [0, 1, 1, 0, −1, −1]`:

@@ -32,7 +32,12 @@ app = FastAPI(title="Tempo API")
 app.add_middleware(
     CORSMiddleware,
     # 3000: web/ (old frontend). 3001: pitch/ (dev server and `npm start`).
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -267,7 +272,6 @@ def _fork_status(decision_id: int, job) -> dict:
         action = _JOB_ACTIONS.get(decision_id)
         out["sentence"] = hero_sentence(rows, action)
     return out
-
 
 
 @app.post("/api/decisions/{decision_id}/fork-audit")
