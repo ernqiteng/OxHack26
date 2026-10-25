@@ -121,3 +121,57 @@ def test_a_feature_constant_in_training_does_not_explode_at_test():
     q = m.predict(X_test)
     span = y.max() - y.min()
     assert q.p50.between(y.min() - span, y.max() + span).all(), (q.p50.min(), q.p50.max())
+
+
+# --- variant B (5-seed ensemble) and variant C (LightGBM + NN average) --------------------------------------
+
+
+def test_ensemble_is_the_mean_of_the_single_seed_models():
+    """Batched training must not change what each member learns: member s == NNQuantileForecaster(seed=s)."""
+    from tempo.forecast.nn import NNEnsembleForecaster
+
+    X, y = random_xy()
+    ens = NNEnsembleForecaster(device="cpu", seeds=(0, 1, 2), max_epochs=60)
+    ens.fit(X, y)
+    singles = []
+    for s in (0, 1, 2):
+        m = NNQuantileForecaster(device="cpu", seed=s, max_epochs=60)
+        m.fit(X, y)
+        singles.append(m)
+        assert ens.member_epochs[s] == m.epochs_run
+    mean = sum(m.predict(X) for m in singles) / 3
+    pd.testing.assert_frame_equal(ens.predict(X), mean, atol=1e-3, rtol=0)
+
+
+def test_ensemble_trains_only_on_the_train_window(synthetic):
+    """The isolation check for variant B: shocking the test week's prices leaves the fitted ensemble as is."""
+    from tempo.backtest.walkforward import tempo_nn_ens_model
+
+    grid, window = synthetic
+
+    def fit(frames):
+        model = tempo_nn_ens_model(frames, device="cpu", seeds=(0, 1))
+        return model.fit(window.train_start, window.test_start)
+
+    base = fit(frames_from_grid(grid))
+    shocked = frames_from_grid(grid)
+    in_test = (shocked.prices.index >= window.test_start) & (shocked.prices.index < window.test_end)
+    shocked.prices[in_test] = shocked.prices[in_test] * 10 + 500
+    after = fit(frames_from_grid_like(shocked))
+    X, _ = random_xy()
+    pd.testing.assert_frame_equal(base.predict(X), after.predict(X), check_exact=True)
+
+
+def test_averaged_model_is_the_mean_of_both_forecasts(synthetic):
+    from tempo.backtest.walkforward import AveragedTempoModel, TempoModel
+
+    grid, window = synthetic
+    frames = frames_from_grid(grid)
+    lgbm, nn = TempoModel(frames), tempo_nn_model(frames, device="cpu")
+    avg = AveragedTempoModel(lgbm, nn)
+    key = (window.train_start, window.test_start)
+    day = pd.date_range(window.test_start + pd.Timedelta(days=1), periods=48, freq="30min")
+    q = avg.forecast(key, day)
+    expected = (lgbm.forecast(key, day).p50 + nn.forecast(key, day).p50) / 2
+    np.testing.assert_allclose(q.p50.to_numpy(), expected.to_numpy())
+    assert (q.p10 <= q.p50).all() and (q.p50 <= q.p90).all()

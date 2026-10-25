@@ -220,6 +220,29 @@ def tempo_nn_model(frames, device: str | None = None, seed: int = 0) -> TempoMod
     return TempoModel(frames, forecaster_factory=lambda: NNQuantileForecaster(device=device, seed=seed))
 
 
+def tempo_nn_ens_model(frames, device: str | None = None, seeds=(0, 1, 2, 3, 4)) -> TempoModel:
+    """tempo_nn_ens: the mean of 5 seeds per window, trained in one batched pass."""
+    from tempo.forecast.nn import NNEnsembleForecaster
+
+    return TempoModel(frames, forecaster_factory=lambda: NNEnsembleForecaster(device=device, seeds=seeds))
+
+
+class AveragedTempoModel(TempoModel):
+    """tempo_avg: each test day's p10/p50/p90 is the mean of two fitted TempoModels' forecasts (LightGBM and
+    tempo_nn), re-sorted; the greedy plan reads p50 only. Reuses both models' fits and caches."""
+
+    def __init__(self, a: TempoModel, b: TempoModel):
+        super().__init__(a.frames)
+        self.a, self.b = a, b
+
+    def forecast(self, key: tuple, day_times: pd.DatetimeIndex) -> pd.DataFrame | None:
+        qa, qb = self.a.forecast(key, day_times), self.b.forecast(key, day_times)
+        if qa is None or qb is None:
+            return None
+        mean = (qa + qb) / 2
+        return pd.DataFrame(np.sort(mean.to_numpy(), axis=1), columns=mean.columns, index=mean.index)
+
+
 def tempo_nn_strategies(frames, device: str | None = None, seed: int = 0) -> dict[str, StrategyFn]:
     """tempo_nn (neural-net forecast + greedy), the GPU run's strategy."""
     return {"tempo_nn": tempo_nn_model(frames, device, seed).strategy(GreedyOptimiser())}

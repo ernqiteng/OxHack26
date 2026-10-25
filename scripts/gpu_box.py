@@ -4,6 +4,7 @@
     python scripts/gpu_box.py create                         # one A16 in lhr; waits for SSH; starts billing
     python scripts/gpu_box.py check                          # nvidia-smi + torch.cuda on the box
     python scripts/gpu_box.py run                            # tempo_nn job on the box -> data/gpu_out
+    python scripts/gpu_box.py run-final                      # final 100-week job -> data/gpu_out_final
     python scripts/gpu_box.py status                         # uptime and cost so far
     python scripts/gpu_box.py delete                         # delete it (do this whenever it is idle)
 
@@ -158,9 +159,30 @@ REPO = Path(__file__).resolve().parents[1]
 REMOTE = "/opt/tempo-gpu"
 
 
-def run_job(client, frames_dir: Path, out_dir: Path) -> None:
-    """The tempo_nn job on the box: committed code (git archive HEAD), the parquet frames, Python 3.12 +
-    CUDA torch, scripts/backtest_nn.py --device cuda, results copied back. The box never gets the DSN."""
+JOBS = {
+    # name: (script and args on the box, result files copied back, extra local files sent to data/). run-final
+    # also pins the box's data/model libraries to this laptop's versions (PINNED), so the recompute of tempo
+    # and tempo_lp is a like-for-like check and the feature cache unpickles.
+    "run": ("scripts/backtest_nn.py --frames data/frames --out out --device cuda",
+            ["results_tempo_nn.parquet", "gpu_runs.json"], []),
+    "run-final": ("scripts/backtest_nn_final.py --frames data/frames --out out --device cuda"
+                  " --features data/frames_features.pkl",
+                  ["results_final.parquet", "timing_final.json"], [REPO / "data" / "frames_features.pkl"]),
+}  # fmt: skip
+
+
+PINNED = ["pandas", "numpy", "pyarrow", "lightgbm", "scikit-learn", "scipy", "highspy"]
+
+
+def pins() -> str:
+    from importlib.metadata import version
+
+    return " ".join(f"{p}=={version(p)}" for p in PINNED)
+
+
+def run_job(client, frames_dir: Path, out_dir: Path, job: str = "run") -> None:
+    """A job on the box: committed code (git archive HEAD), the parquet frames (+ the job's extra files),
+    Python 3.12 + CUDA torch, the job's script on cuda, results copied back. The box never gets the DSN."""
     import subprocess
 
     from tempo.infra.deploy import SSH_OPTS
@@ -176,8 +198,13 @@ def run_job(client, frames_dir: Path, out_dir: Path) -> None:
     archive.wait()
     print("copying frames")
     ssh(ip, KEY_PATH, f"mkdir -p {REMOTE}/data/frames {REMOTE}/out")
+    command, results, extras = JOBS[job]
     files = [str(p) for p in sorted(frames_dir.glob("*.parquet"))]
     subprocess.run(["scp", *base, *files, f"{target}:{REMOTE}/data/frames/"], check=True, capture_output=True)
+    if extras:
+        subprocess.run(
+            ["scp", *base, *map(str, extras), f"{target}:{REMOTE}/data/"], check=True, capture_output=True
+        )
     index = cuda_wheel_index(ssh(ip, KEY_PATH, "nvidia-smi", timeout=60))
     print("installing Python 3.12, CUDA torch and the repo (a few minutes)")
     ssh(
@@ -192,22 +219,23 @@ def run_job(client, frames_dir: Path, out_dir: Path) -> None:
         f" && /opt/uv-venv/bin/uv pip install -q --python /opt/py312/bin/python -e {REMOTE}",
         timeout=2400,
     )
-    print("running tempo_nn (30 weeks on cuda) and the 10-window cuda vs cpu timing")
-    out = ssh(
-        ip,
-        KEY_PATH,
-        f"cd {REMOTE} && /opt/py312/bin/python -u scripts/backtest_nn.py"
-        " --frames data/frames --out out --device cuda",
-        timeout=3600,
-    )
+    if job == "run-final":
+        print(f"pinning {pins()}")
+        ssh(
+            ip,
+            KEY_PATH,
+            f"/opt/uv-venv/bin/uv pip install -q --python /opt/py312/bin/python {pins()}",
+            timeout=900,
+        )
+    print(f"running {command}")
+    out = ssh(ip, KEY_PATH, f"cd {REMOTE} && /opt/py312/bin/python -u {command}", timeout=3600)
     print(out)
     out_dir.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
             "scp",
             *base,
-            f"{target}:{REMOTE}/out/results_tempo_nn.parquet",
-            f"{target}:{REMOTE}/out/gpu_runs.json",
+            *(f"{target}:{REMOTE}/out/{name}" for name in results),
             str(out_dir),
         ],
         check=True,
@@ -255,9 +283,10 @@ def main() -> int:
     k.add_argument("pub", type=Path)
     for name in ("create", "check", "status", "delete"):
         sub.add_parser(name)
-    r = sub.add_parser("run")
-    r.add_argument("--frames", type=Path, default=REPO / "data" / "frames")
-    r.add_argument("--out", type=Path, default=REPO / "data" / "gpu_out")
+    for job, out in (("run", "gpu_out"), ("run-final", "gpu_out_final")):
+        r = sub.add_parser(job)
+        r.add_argument("--frames", type=Path, default=REPO / "data" / "frames")
+        r.add_argument("--out", type=Path, default=REPO / "data" / out)
     a = ap.parse_args()
 
     from tempo.infra.vultr import VultrClient
@@ -270,6 +299,7 @@ def main() -> int:
         "status": lambda: status(client),
         "delete": lambda: delete(client),
         "run": lambda: run_job(client, a.frames, a.out),
+        "run-final": lambda: run_job(client, a.frames, a.out, job="run-final"),
     }[a.cmd]()
     return 0
 
